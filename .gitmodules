@@ -1,0 +1,4 @@
+[submodule "decentralizedlearning/submodules/multi-agent-particle-envs"]
+	path = decentralizedlearning/submodules/multi-agent-particle-envs
+	url = https://github.com/danielwillemsen/multiagent-particle-envs.git
+	branch = master
