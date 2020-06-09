@@ -5,7 +5,7 @@ sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodule
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
 
 import argparse
-
+from envwrapper import EnvWrapper
 from multiagent.environment import MultiAgentEnv
 from multiagent.policy import InteractivePolicy
 import multiagent.scenarios as scenarios

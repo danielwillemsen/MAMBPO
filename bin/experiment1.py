@@ -6,22 +6,26 @@ sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
 
 import argparse
 import numpy as np
-from multiagent.environment import MultiAgentEnv
-from multiagent.policy import InteractivePolicy
-import multiagent.scenarios as scenarios
+from envwrapper import EnvWrapper
+
 from hddpg import HDDPGAgent
 import matplotlib.pyplot as plt
 
-def run_episode(env, agents, eval=False, steps=50):
+def scale_action(env, agent_id, action):
+    return (env.action_space[agent_id].high-env.action_space[agent_id].low)*action + env.action_space[agent_id].low
+
+def run_episode(env, agents, eval=False, steps=200):
     obs_n = env.reset()
     reward_tot = 0.0
     reward_n = [0.0]
+    
     #Start env
     for i in range(steps):
         # query for action from each agent's policy
         act_n = []
         for j, agent in enumerate(agents):
-            act_n.append(agent.step(obs_n[j], reward_n, eval=eval))
+            action = scale_action(env, j, agent.step(obs_n[j], reward_n, eval=False))
+            act_n.append(action)
         # step environment
         obs_n, reward_n, done_n, _ = env.step(act_n)
         reward_tot += reward_n[0]
@@ -36,7 +40,7 @@ def train(env, agents, n_episodes=1000):
     scores = []
     for i in range(n_episodes):
         print("Episode: " + str(i))
-        if i%20 == 0:
+        if i%1 == 0:
             score = run_episode(env, agents, eval=True)
         else:
             score = run_episode(env, agents)
@@ -45,17 +49,7 @@ def train(env, agents, n_episodes=1000):
     return scores
 
 if __name__ == '__main__':
-    # parse arguments
-    parser = argparse.ArgumentParser(description=None)
-    parser.add_argument('-s', '--scenario', default='simple_spread.py', help='Path of the scenario Python script.')
-    args = parser.parse_args()
-
-    # load scenario from script
-    scenario = scenarios.load(args.scenario).Scenario()
-    # create world
-    world = scenario.make_world()
-    # create multiagent environment
-    env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation, info_callback=None, shared_viewer = False)
+    env = EnvWrapper("gym", "Pendulum-v0")
 
     # execution loop
     n_runs = 10
@@ -65,36 +59,35 @@ if __name__ == '__main__':
     logdata["f_hyst=0.25"] = []
 
     for run in range(n_runs):
-        name = "f_hyst=0.25"
-        obs_n = env.reset()
-        agents = []
-        for i in range(3):
-            agents.append(HDDPGAgent(len(obs_n[0]), 8))
-        for agent in agents:
-            agent.f_hyst = 0.25
-        logdata[name].append(train(env,agents))
-        p.dump(logdata, open("../logs/exp_mult6","wb"))
-
         name = "f_hyst=1.0"
         obs_n = env.reset()
         agents = []
-        for i in range(3):
-            agents.append(HDDPGAgent(len(obs_n[0]), 8))
+        for i in range(env.n_agents):
+            agents.append(HDDPGAgent(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
         for agent in agents:
             agent.f_hyst = 1.0
         logdata[name].append(train(env,agents))
-        p.dump(logdata, open("../logs/exp_mult6","wb"))
+        p.dump(logdata, open("./logs/exp_mult6","wb"))
 
         name = "f_hyst=0.5"
         obs_n = env.reset()
         agents = []
-        for i in range(3):
-            agents.append(HDDPGAgent(len(obs_n[0]), 8))
+        for i in range(env.n_agents):
+            agents.append(HDDPGAgent(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
         for agent in agents:
             agent.f_hyst = 0.5
         logdata[name].append(train(env,agents))
-        p.dump(logdata, open("../logs/exp_mult6","wb"))
+        p.dump(logdata, open("./logs/exp_mult6","wb"))
 
+        name = "f_hyst=0.25"
+        obs_n = env.reset()
+        agents = []
+        for i in range(env.n_agents):
+            agents.append(HDDPGAgent(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
+        for agent in agents:
+            agent.f_hyst = 0.25
+        logdata[name].append(train(env,agents))
+        p.dump(logdata, open("./logs/exp_mult6","wb"))
 
     # name = "f_hyst=0.5"
     # run_data = []
