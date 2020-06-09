@@ -14,10 +14,10 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-env = gym.make('Pendulum-v0')
+env = gym.make('MountainCarContinuous-v0')
 print(env.observation_space)
 print(env.action_space)
-actor = HDDPGAgent(3, 1)
+actor = HDDPGAgent(env.observation_space.shape[0], env.action_space.shape[0])
 reward = 0
 for i_episode in range(2000):
     observation = env.reset()
@@ -26,7 +26,7 @@ for i_episode in range(2000):
         env.render()
         #print(observation)
         action = actor.step(observation, [reward])
-        observation, reward, done, info = env.step([action*4 - 2.0])
+        observation, reward, done, info = env.step((env.action_space.high-env.action_space.low)*action + env.action_space.low)
         if done:
             print("Episode finished after {} timesteps".format(t+1))
             actor.reset()

@@ -27,7 +27,7 @@ if __name__ == '__main__':
     # create interactive policies for each agent
     obs_n = env.reset()
 
-    agents = [HDDPGAgent(len(obs_n[0]),8), HDDPGAgent(len(obs_n[0]),8), HDDPGAgent(len(obs_n[0]),8)]
+    agents = [HDDPGAgent(len(obs_n[0]),8), HDDPGAgent(len(obs_n[0]),8)]#, HDDPGAgent(len(obs_n[0]),8), HDDPGAgent(len(obs_n[0]),8)]
     # execution loop
     episode = 0
     while True:
@@ -35,7 +35,7 @@ if __name__ == '__main__':
         print(episode)
         obs_n = env.reset()
         reward_n = [0.0]
-        for i in range(250):
+        for i in range(100):
             # query for action from each agent's policy
             act_n = []
             for j, agent in enumerate(agents):
