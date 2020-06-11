@@ -43,7 +43,7 @@ class HDDPGAgent:
         self.f_hyst = 1.0
 
         self.optimizer_critic = torch.optim.Adam(self.ac.critic.parameters(), lr=0.001)
-        self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=0.0001)
+        self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=0.001)
 
     def reset(self):
         self.o_old = None
@@ -61,7 +61,7 @@ class HDDPGAgent:
 
     def step(self, o, r, eval=False):
         o = torch.Tensor(o)
-        r = torch.Tensor(np.array(r[0]))
+        r = torch.Tensor(np.array(float(r[0])))
         #print(o)
         #print("R: " + str(r))
         if not eval:
@@ -110,7 +110,7 @@ class HDDPGAgent:
                 if self.use_OU:
                     action_noisy = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action_noisy = action + torch.randn(action.size())*0.25
+                    action_noisy = action + torch.randn(action.size())*0.5
                 action = torch.clamp(action_noisy,0., 1.0)
 
             self.o_old = o
@@ -127,8 +127,8 @@ class HDDPGAgent:
 class ReplayBuffer():
     def __init__(self):
         self.buffer = []
-        self.n_samples = 64
-        self.max_size = 10000
+        self.n_samples = 128
+        self.max_size = 1000000
 
     def len(self):
         return len(self.buffer)
@@ -141,17 +141,17 @@ class ReplayBuffer():
     def sample(self):
         samples = random.choices(self.buffer, k=self.n_samples)
         data = [*zip(samples)]
-        data_dict = {"o": data[0], "a": data[1], "r": data[2], "o_next": data[3]}
+        data_dict = {"o": data[0], "a": data[1], "r": data[2], "o_next": data[3], "done": data[3]}
         return data_dict
 
     def sample_tensors(self):
         samples = random.choices(self.buffer, k=self.n_samples)
         data = [*zip(*samples)]
-        data_dict = {"o": torch.stack(data[0]), "a": torch.stack(data[1]), "r": torch.stack(data[2]), "o_next": torch.stack(data[3])}
+        data_dict = {"o": torch.stack(data[0]), "a": torch.stack(data[1]), "r": torch.stack(data[2]), "o_next": torch.stack(data[3]), "done": torch.stack(data[4])}
         return data_dict
 
 class ActorCritic(nn.Module):
-    def __init__(self, obs_dim, action_dim, hidden_dims_actor=(128, 128), hidden_dims_critic=(128,128)):
+    def __init__(self, obs_dim, action_dim, hidden_dims_actor=(256, 256), hidden_dims_critic=(256,256)):
         super().__init__()
         self.actor = Actor(obs_dim, hidden_dims_actor, action_dim)
         self.critic = Critic(obs_dim + action_dim, hidden_dims_critic)

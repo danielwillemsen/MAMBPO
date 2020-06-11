@@ -1,7 +1,7 @@
 """Contains a wrapper for openAI gym, multi-agent particles and other custom environments to provide constant interface for RL algorithms"""
 import sys
 import os
-sys.path.insert(1, os.path.join(sys.path[0], './submodules/multi-agent-particle-envs'))
+sys.path.insert(1, os.path.join(sys.path[0], './decentralizedlearning/submodules/multi-agent-particle-envs'))
 import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
@@ -34,7 +34,9 @@ class EnvWrapper:
             self.n_agents = 1
             self.observation_space = [self.env.observation_space]
             self.action_space = [self.env.action_space]
-
+            # if self.env.action_space.dtype == dtype('float32'):
+            #    self.action_type = "continuous"
+            
         # Setup environment for "particle" suite.
         if suite=="particle":
             self.scenario = scenarios.load(env_name).Scenario()
@@ -44,12 +46,13 @@ class EnvWrapper:
                                      info_callback=None, shared_viewer=False)
             self.action_space = self.env.action_space
             self.n_agents = len(self.action_space)
-            
+            self.observation_space = self.env.observation_space 
             # Particle suite does not have proper action spaces, hardcoded in here. 
             for act_space in self.action_space:
                 act_space.low = np.zeros(8)
                 act_space.high =  np.zeros(8) + 1.0
-
+                act_space.shape = (8,)
+                
     def step(self, actions: list):
         """step. Takes a step in the environment given a list of actions, one for
         every agent. Individual actions should be np arrays containing all
