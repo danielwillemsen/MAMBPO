@@ -1,10 +1,13 @@
 """Contains a wrapper for openAI gym, multi-agent particles and other custom environments to provide constant interface for RL algorithms"""
 import sys
 import os
-sys.path.insert(1, os.path.join(sys.path[0], './decentralizedlearning/submodules/multi-agent-particle-envs'))
+sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
+sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/environments'))
+
 import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
+from waypoints import WaypointsEnv
 import numpy as np
 
 class EnvWrapper:
@@ -24,7 +27,7 @@ class EnvWrapper:
         :param kwargs:
         """
         # Check if suite name is correct and can be handled
-        supported_suites = ["gym", "particle"]
+        supported_suites = ["gym", "particle", "custom"]
         assert suite in supported_suites, "Suite should be in {} but was {}".format(str(supported_suites), suite)
         self.suite = suite
         
@@ -36,7 +39,12 @@ class EnvWrapper:
             self.action_space = [self.env.action_space]
             # if self.env.action_space.dtype == dtype('float32'):
             #    self.action_type = "continuous"
-            
+        if suite == "custom":
+            self.env = WaypointsEnv()
+            self.n_agents = self.env.n
+            self.action_space = self.env.action_space
+            self.observation_space = self.env.observation_space
+            print(self.env)
         # Setup environment for "particle" suite.
         if suite=="particle":
             self.scenario = scenarios.load(env_name).Scenario()

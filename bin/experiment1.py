@@ -8,31 +8,34 @@ import argparse
 import numpy as np
 from envwrapper import EnvWrapper
 
-from hddpg import HDDPGAgent
-from td3 import TD3
+from decentralizedlearning.algs.hddpg import HDDPGAgent
+from decentralizedlearning.algs.td3 import TD3
 import matplotlib.pyplot as plt
 
 def scale_action(env, agent_id, action):
     return (env.action_space[agent_id].high-env.action_space[agent_id].low)*action + env.action_space[agent_id].low
 
-def run_episode(env, agents, eval=False,render=False, steps=2000):
+def run_episode(env, agents, eval=False,render=False, steps=100):
     obs_n = env.reset()
-    reward_tot = 0.0
-    reward_n = [0.0]
+    reward_tot = [0.0 for i in range(len(agents))]
+    reward_n = [0.0 for i in range(len(agents))]
     
     #Start env
     for i in range(steps):
         # query for action from each agent's policy
         act_n = []
         for j, agent in enumerate(agents):
-            action = scale_action(env, j, agent.step(obs_n[j], reward_n, eval=eval))
+            action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], eval=eval))
             act_n.append(action)
         # step environment
         obs_n, reward_n, done_n, _ = env.step(act_n)
-        reward_tot += reward_n[0]
+        
+        for j, r in enumerate(reward_n):
+            reward_tot[j] += r
         if done_n[0]:
             for j, agent in enumerate(agents):
-                action = scale_action(env, j, agent.step(obs_n[j], reward_n, eval=eval))
+                print(reward_n)
+                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], eval=eval))
                 act_n.append(action)
                 agent.reset()
             print("Episode finished after {} timesteps".format(i+1))

@@ -4,17 +4,15 @@ import torch.nn.functional as F
 import copy
 import random
 import numpy as np
+from decentralizedlearning.algs.utils import OUNoise
+from decentralizedlearning.algs.utils import ActorCritic
+from decentralizedlearning.algs.utils import ReplayBuffer
 
-from hddpg import ReplayBuffer
-from hddpg import ActorCritic 
 
-class TD3:
+class HDDPGAgent:
     def __init__(self, obs_dim, action_dim, use_OU=False):
         self.ac = ActorCritic(obs_dim, action_dim)
         self.ac_target = copy.deepcopy(self.ac)
-        self.ac2 = ActorCritic(obs_dim, action_dim)
-        self.ac_target2 = copy.deepcopy(self.ac2)
-
         for par in self.ac_target.parameters():
             par.requires_grad = False
         self.use_OU = False
@@ -25,16 +23,13 @@ class TD3:
         self.buffer = ReplayBuffer()
         self.o_old = None
         self.a_old = None
-        self.gamma = 0.99
-        self.tau = 0.005
+        self.gamma = 0.95
+        self.tau = 0.001
         self.f_hyst = 1.0
-        self.delay = 2
 
         self.optimizer_critic = torch.optim.Adam(self.ac.critic.parameters(), lr=0.001)
-        self.optimizer_critic2 = torch.optim.Adam(self.ac2.critic.parameters(), lr=0.001)
         self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=0.001)
-        self.step_i = 0
-        
+
     def reset(self):
         self.o_old = None
         self.a_old = None
@@ -51,7 +46,7 @@ class TD3:
 
     def step(self, o, r, eval=False, done=False):
         o = torch.Tensor(o)
-        r = torch.Tensor(np.array(float(r[0])))
+        r = torch.Tensor(np.array(float(r)))
         done = torch.Tensor(np.array(float(done)))
         #print(o)
         #print("R: " + str(r))
@@ -65,42 +60,33 @@ class TD3:
 
                 # Update Critic
                 self.optimizer_critic.zero_grad()
-                self.optimizer_critic2.zero_grad()
                 with torch.no_grad():
-                    a_target = self.ac_target.actor(b["o_next"]) 
-                    a_target = torch.clamp(a_target + torch.clamp(torch.randn(a_target.size())*0.2,-0.5,0.5), 0., 1.)
-                    y = b["r"].unsqueeze(-1) + (1-b["done"])*self.gamma * torch.min(self.ac_target.critic(b["o_next"],a_target), self.ac_target2.critic(b["o_next"],a_target))
+                    y = b["r"].unsqueeze(-1) + (1-b["done"])*self.gamma * self.ac_target.critic(b["o_next"],self.ac_target.actor(b["o_next"]))
                 loss_critic = self.loss_critic(self.ac.critic(b["o"], b["a"]), y)
-                loss_critic2 = self.loss_critic(self.ac2.critic(b["o"], b["a"]), y)
-                if(np.random.random()<0.0025):
-                    print("Loss:", loss_critic, loss_critic2)
-                    print("Mean Q:", torch.mean(y))
+
                 loss_critic.backward()
-                loss_critic2.backward()
                 self.optimizer_critic.step()
-                self.optimizer_critic2.step()
 
                 # Update Actor
-                if self.step_i%self.delay == 0:
-                    for par in self.ac.critic.parameters():
-                        par.requires_grad = False
+                for par in self.ac.critic.parameters():
+                    par.requires_grad = False
 
-                    self.optimizer_actor.zero_grad()
-                    loss_actor = -torch.mean(self.ac.critic(b["o"],self.ac.actor(b["o"])))
-                    #print("Loss actor: " + str(loss_actor))
+                self.optimizer_actor.zero_grad()
+                loss_actor = -torch.mean(self.ac.critic(b["o"],self.ac.actor(b["o"])))
+                #print("Loss actor: " + str(loss_actor))
 
-                    loss_actor.backward()
+                loss_actor.backward()
 
-                    self.optimizer_actor.step()
+                self.optimizer_actor.step()
 
-                    for par in self.ac.critic.parameters():
-                        par.requires_grad = True
+                for par in self.ac.critic.parameters():
+                    par.requires_grad = True
 
-                    # Update Target Networks
-                    with torch.no_grad():
-                        for par, par_target in zip(self.ac.parameters(), self.ac_target.parameters()):
-                            par_target.data.copy_((1-self.tau) * par_target + self.tau * par.data)
-                            #par_target.data._add((1-self.polyak) * par.data)
+                # Update Target Networks
+                with torch.no_grad():
+                    for par, par_target in zip(self.ac.parameters(), self.ac_target.parameters()):
+                        par_target.data.copy_((1-self.tau) * par_target + self.tau * par.data)
+                        #par_target.data._add((1-self.polyak) * par.data)
 
 
 
@@ -110,7 +96,7 @@ class TD3:
                 if self.use_OU:
                     action_noisy = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action_noisy = action + torch.randn(action.size())*0.1
+                    action_noisy = action + torch.randn(action.size())*0.5
                 action = torch.clamp(action_noisy,0., 1.0)
 
             self.o_old = o
@@ -121,5 +107,5 @@ class TD3:
         else:
             action = self.ac.actor(o.unsqueeze(0)).squeeze()
             action = torch.clamp(action, 0., 1.0)
-        self.step_i += 1
         return action.detach().numpy()
+
