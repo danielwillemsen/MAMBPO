@@ -10,6 +10,8 @@ from envwrapper import EnvWrapper
 
 from decentralizedlearning.algs.hddpg import HDDPGAgent
 from decentralizedlearning.algs.td3 import TD3
+from decentralizedlearning.algs.modelbased import ModelAgent
+
 import matplotlib.pyplot as plt
 
 def scale_action(env, agent_id, action):
@@ -51,9 +53,9 @@ def train(env, agents, n_episodes=10000):
     scores = []
     for i in range(n_episodes):
         print("Episode: " + str(i))
-        if i%10 == 0:
+        if i%2 == 0:
             score = run_episode(env, agents, eval=True)
-        elif i%5 ==0:
+        elif i%1 ==0:
             score = run_episode(env, agents, render=True)
         else:
             score = run_episode(env, agents)
@@ -66,9 +68,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--suite', type=str, default="gym", help='Environment Suite to use')
     parser.add_argument('--name', type=str, default="Pendulum-v0", help='Environment name to use')
-    parser.add_argument('--alg', type=str, default="HDDPGAgent", help='Name of alg to use: hddpg or TD3')
+    parser.add_argument('--alg', type=str, default="ModelAgent", help='Name of alg to use: hddpg or TD3')
     args = parser.parse_args()
-    agent_dict = {"HDDPGAgent": HDDPGAgent, "TD3": TD3}
+    agent_dict = {"HDDPGAgent": HDDPGAgent, "TD3": TD3, "ModelAgent": ModelAgent}
 
     # Checks for valid argument
     assert args.alg in agent_dict.keys(), "Invalid algorithm selected: {}. Available are: {}".format(args.alg, str(agent_dict.keys()))

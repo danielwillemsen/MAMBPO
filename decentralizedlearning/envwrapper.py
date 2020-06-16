@@ -32,7 +32,7 @@ class EnvWrapper:
         self.suite = suite
         
         # Setup environment for "gym" suite.
-        if suite=="gym":
+        if suite == "gym":
             self.env = gym.make(env_name)
             self.n_agents = 1
             self.observation_space = [self.env.observation_space]

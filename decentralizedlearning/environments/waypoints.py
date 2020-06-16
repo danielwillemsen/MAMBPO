@@ -12,7 +12,7 @@ class Agent:
         self.pos += self.vel*dt
 
 class WaypointsEnv():
-    def __init__(self, n=2):
+    def __init__(self, n=1):
         self.dt = 0.1
         self.max_o = np.array([1.,1.,1.,1.])
         self.max_a = np.array([1.,1.])
@@ -32,7 +32,7 @@ class WaypointsEnv():
         
         for i, agent in enumerate(self.agents):
             agent.update(a[i], self.dt)
-            rewards[i] += np.linalg.norm(agent.vel)*0.1
+            rewards[i] += -np.linalg.norm(agent.pos)
             if agent.pos[0] > self.max_o[0] or agent.pos[0]<0.:
                 agent.vel[0] *= -1
                 rewards[i] -= 1.0
