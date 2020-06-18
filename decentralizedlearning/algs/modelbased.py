@@ -15,9 +15,9 @@ class ModelAgent:
     def __init__(self, obs_dim, action_dim, *args, **kwargs):
         # Initialize arguments
         hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (128, 128)))
+                                             (256, 256)))
         hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (128, 128)))
+                                              (256, 256)))
         hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
                                              (256, 256)))
 
@@ -31,7 +31,8 @@ class ModelAgent:
         lr_critic = 0.001
         lr_model = 0.0001
         self.step_random = 500 
-
+        self.update_every_n_steps = 51
+        self.update_steps = 200
         self.time = time.time()
 
         # Initialize actor
@@ -59,7 +60,7 @@ class ModelAgent:
         # Initialize models
         self.models = []
         self.optimizer_models = []
-        for k in range(20):
+        for k in range(10):
             model = Model(obs_dim + action_dim, hidden_dims_model, obs_dim)
             self.models.append(model)
             self.optimizer_models.append(torch.optim.Adam(model.parameters(),
@@ -96,90 +97,26 @@ class ModelAgent:
                 self.buffer.add((self.o_old, self.a_old, r, o, done))
 
             # Train Model
-            if self.buffer.len() > self.buffer.n_samples:
-                samples = self.buffer.sample_tensors()
-                for optim, model in zip(self.optimizer_models, self.models):
-                    o_next_pred, r_pred = model(samples["o"], samples["a"])
+            if self.step_i % self.update_every_n_steps == 0:
+                for step in range(self.update_steps):
+                    if self.buffer.len() > self.buffer.n_samples:
+                        self.update_models()
 
-                    sigma = o_next_pred[1]
-                    sigma_2 = r_pred[1]
-                    mu = o_next_pred[0]
-                    target = samples["o_next"]
-                    loss1 = torch.mean((mu - target)/sigma**2*(mu - target))
-                    loss3 = torch.mean(torch.log(torch.prod(sigma**2, 1)*torch.prod(sigma_2**2, 1)))
-                    mu = r_pred[0]
-                    target = samples["r"].unsqueeze(1)
-                    loss2 = torch.mean((mu - target)/sigma_2**2*(mu - target))
+                    # Train actor and critic
+                    if self.buffer.len() > self.buffer.n_samples:
+                        for model in self.models:
+                            b = self.sample_from_model(model)
 
-                    loss = loss1 + loss2 + loss3
-                    # print(loss1, loss2, loss3)
-                    optim.zero_grad()
-                    loss.backward()
-                    optim.step()
+                            # Update Critic
+                            self.update_critics(b)
 
-            # Train actor and critic
-            if self.buffer.len() > self.buffer.n_samples:
-                for model in self.models:
-                    # Sample Minibatch
-                    b = self.buffer.sample_tensors(n=128)
-                    with torch.no_grad():
-                        action = self.actor(b["o"])
-                        if self.use_OU:
-                            action_noisy = action + torch.Tensor(self.ou.noise())[0]
-                        else:
-                            action_noisy = action + torch.randn(action.size()) * 0.3
-                        b["a"] = torch.clamp(action_noisy, 0., 1.0)
-                    new_o, r = model.sample(b["o"], b["a"])
-                    b["o_next"] = new_o
-                    b["r"] = r.squeeze()
+                            # Update Actor
+                            if self.step_i % self.delay == 0:
+                                self.update_actor(b)
 
-                    # Update Critic
-                    with torch.no_grad():
-                        a_target = self.actor_target(b["o_next"])
-                        a_target = torch.clamp(
-                            a_target + torch.clamp(torch.randn(a_target.size())*0.1, -0.5, 0.5), 0., 1.)
-                        y = b["r"].unsqueeze(-1) + (1-b["done"])*self.gamma * torch.min(
-                            *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target])
-                    
-                    for optimizer, critic in zip(self.optimizer_critics, self.critics):
-                        loss = self.loss_critic(critic(b["o"], b["a"]), y)
+                                # Update Target Networks
+                                self.update_target_networks()
 
-                        if(np.random.random() < 0.05):
-                            print("Loss:", loss)
-                            print("Mean Q:", torch.mean(y))
-                        # print(time.time() - self.time)
-                        self.time = time.time()
-                        optimizer.zero_grad()
-                        loss.backward()
-                        # print(time.time() - self.time)
-                        self.time = time.time()
-                        # print("Loss")
-                        optimizer.step()
-
-                    # Update Actor
-                    if self.step_i % self.delay == 0:
-                        for par in self.critics[0].parameters():
-                            par.requires_grad = False
-
-                        self.optimizer_actor.zero_grad()
-                        loss_actor = - \
-                            torch.mean(self.critics[0](b["o"], self.actor(b["o"])))
-                        loss_actor.backward()
-                        self.optimizer_actor.step()
-
-                        for par in self.critics[0].parameters():
-                            par.requires_grad = True
-
-                        # Update Target Networks
-                        with torch.no_grad():
-                            for par, par_target in zip(self.actor.parameters(), self.actor_target.parameters()):
-                                par_target.data.copy_(
-                                    (1-self.tau) * par_target + self.tau * par.data)
-                            for k in range(2):
-                                for par, par_target in zip(self.critics[k].parameters(), self.critics_target[k].parameters()):
-
-                                    par_target.data.copy_(
-                                        (1-self.tau) * par_target + self.tau * par.data)
             # Select Action
             with torch.no_grad():
                 action = self.actor(o.unsqueeze(0)).squeeze()
@@ -201,3 +138,83 @@ class ModelAgent:
             action = torch.clamp(action, 0., 1.0)
 
         return action.detach().numpy()
+
+    def update_target_networks(self):
+        with torch.no_grad():
+            for par, par_target in zip(self.actor.parameters(), self.actor_target.parameters()):
+                par_target.data.copy_(
+                    (1 - self.tau) * par_target + self.tau * par.data)
+            for k in range(2):
+                for par, par_target in zip(self.critics[k].parameters(), self.critics_target[k].parameters()):
+                    par_target.data.copy_(
+                        (1 - self.tau) * par_target + self.tau * par.data)
+
+    def update_actor(self, b):
+        for par in self.critics[0].parameters():
+            par.requires_grad = False
+        self.optimizer_actor.zero_grad()
+        loss_actor = - \
+            torch.mean(self.critics[0](b["o"], self.actor(b["o"])))
+        loss_actor.backward()
+        self.optimizer_actor.step()
+        for par in self.critics[0].parameters():
+            par.requires_grad = True
+
+    def update_critics(self, b):
+        with torch.no_grad():
+            a_target = self.actor_target(b["o_next"])
+            a_target = torch.clamp(
+                a_target + torch.clamp(torch.randn(a_target.size()) * 0.1, -0.5, 0.5), 0., 1.)
+            y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.gamma * torch.min(
+                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target])
+        for optimizer, critic in zip(self.optimizer_critics, self.critics):
+            loss = self.loss_critic(critic(b["o"], b["a"]), y)
+
+            if (np.random.random() < 0.001):
+                print("Loss:", loss)
+                print("Mean Q:", torch.mean(y))
+            # print(time.time() - self.time)
+            self.time = time.time()
+            optimizer.zero_grad()
+            loss.backward()
+            # print(time.time() - self.time)
+            self.time = time.time()
+            # print("Loss")
+            optimizer.step()
+
+    def sample_from_model(self, model):
+        # Sample Minibatch
+        b = self.buffer.sample_tensors(n=128)
+        with torch.no_grad():
+            action = self.actor(b["o"])
+            if self.use_OU:
+                action_noisy = action + torch.Tensor(self.ou.noise())[0]
+            else:
+                action_noisy = action + torch.randn(action.size()) * 0.3
+            b["a"] = torch.clamp(action_noisy, 0., 1.0)
+        new_o, r = model.sample(b["o"], b["a"])
+        b["o_next"] = new_o
+        b["r"] = r.squeeze()
+        return b
+
+    def update_models(self):
+        samples = self.buffer.sample_tensors()
+        for optim, model in zip(self.optimizer_models, self.models):
+            self.model_step(model, optim, samples)
+
+    def model_step(self, model, optim, samples):
+        o_next_pred, r_pred = model(samples["o"], samples["a"])
+        sigma = o_next_pred[1]
+        sigma_2 = r_pred[1]
+        mu = o_next_pred[0]
+        target = samples["o_next"]
+        loss1 = torch.mean((mu - target) / sigma ** 2 * (mu - target))
+        loss3 = torch.mean(torch.log(torch.prod(sigma ** 2, 1) * torch.prod(sigma_2 ** 2, 1)))
+        mu = r_pred[0]
+        target = samples["r"].unsqueeze(1)
+        loss2 = torch.mean((mu - target) / sigma_2 ** 2 * (mu - target))
+        loss = loss1 + loss2 + loss3
+        # print(loss1, loss2, loss3)
+        optim.zero_grad()
+        loss.backward()
+        optim.step()

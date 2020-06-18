@@ -6,14 +6,16 @@ import matplotlib.pyplot as plt
 
 sns.set(style="darkgrid")
 
-data = p.load(open("../logs/exp_mult5", "rb"))
+data = p.load(open("./logs/pendulum2", "rb"))
 
 frames = dict()
 for key, dat in data.items():
-    frame = pd.DataFrame(columns=["episode", "score"])
+    frame = pd.DataFrame(columns=["episode", "time", "score"])
     for run in dat:
-        for ep, perf in enumerate(run):
-            frame.loc[len(frame)] = [ep, perf]
+        run_score = run["scores"]
+        run_time = run["times"]
+        for ep, perf in enumerate(run_score):
+            frame.loc[len(frame)] = [ep, run_time[ep], perf[0]]
     frames[key] = frame
 
 for name, frame in frames.items():
@@ -22,6 +24,15 @@ for name, frame in frames.items():
     #ax.set(yscale="log")
 
 plt.show()
+
+
+for name, frame in frames.items():
+    ax = sns.lineplot(x="episode", y="time", data=frame, label=name)
+    #ax.set(ylim=(,1)
+    #ax.set(yscale="log")
+
+plt.show()
+
 #fmri = sns.load_dataset("fmri")
 ##data = pd.DataFrame(data=data)
 

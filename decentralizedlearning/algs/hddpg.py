@@ -96,7 +96,7 @@ class HDDPGAgent:
                 if self.use_OU:
                     action_noisy = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action_noisy = action + torch.randn(action.size())*0.5
+                    action_noisy = action + torch.randn(action.size())*0.3
                 action = torch.clamp(action_noisy,0., 1.0)
 
             self.o_old = o

@@ -87,7 +87,7 @@ class TD3:
                 with torch.no_grad():
                     a_target = self.actor_target(b["o_next"])
                     a_target = torch.clamp(
-                        a_target + torch.clamp(torch.randn(a_target.size())*0.1, -0.5, 0.5), 0., 1.)
+                        a_target + torch.clamp(torch.randn(a_target.size())*0.0, -0.5, 0.5), 0., 1.)
                     y = b["r"].unsqueeze(-1) + (1-b["done"])*self.gamma * torch.min(
                         *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target])
                 loss_critics = [self.loss_critic(critic(b["o"], b["a"]), y)

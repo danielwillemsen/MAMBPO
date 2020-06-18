@@ -29,7 +29,7 @@ class ReplayBuffer():
     def __init__(self):
         self.buffer = []
         self.n_samples = 128
-        self.max_size = 1000000
+        self.max_size = 2000000
 
     def len(self):
         return len(self.buffer)
@@ -53,7 +53,7 @@ class ReplayBuffer():
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, obs_dim, action_dim, hidden_dims_actor=(164, 164), hidden_dims_critic=(164,164)):
+    def __init__(self, obs_dim, action_dim, hidden_dims_actor=(256, 256), hidden_dims_critic=(256,256)):
         super().__init__()
         self.actor = Actor(obs_dim, hidden_dims_actor, action_dim)
         self.critic = Critic(obs_dim + action_dim, hidden_dims_critic)
@@ -113,7 +113,7 @@ class Model(nn.Module):
     def forward(self, observation, action):
         x = torch.cat([observation, action], dim=-1)
         x = self.net(x)
-        return [self.mu_output(x), torch.exp(self.sigma_output(x))], [self.mu_reward(x)*5, torch.exp(self.sigma_reward(x))]
+        return [self.mu_output(x), torch.exp(self.sigma_output(x))], [self.mu_reward(x), torch.exp(self.sigma_reward(x))]
 
     def sample(self, observation, action):
         with torch.no_grad():

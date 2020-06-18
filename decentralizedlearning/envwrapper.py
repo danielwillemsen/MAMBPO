@@ -8,7 +8,10 @@ import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from waypoints import WaypointsEnv
+from crossing import CrossingEnv
 import numpy as np
+from crossing import ContinuousCrossingEnv
+from gym import wrappers
 
 class EnvWrapper:
     """EnvWrapper."""
@@ -27,11 +30,18 @@ class EnvWrapper:
         :param kwargs:
         """
         # Check if suite name is correct and can be handled
-        supported_suites = ["gym", "particle", "custom"]
+        supported_suites = ["gym", "particle", "custom", "gym-record"]
         assert suite in supported_suites, "Suite should be in {} but was {}".format(str(supported_suites), suite)
         self.suite = suite
-        
+        self.wrapped_env = None
         # Setup environment for "gym" suite.
+        if suite =="gym-record":
+            env = gym.make(env_name)
+            self.wrapped_env = env
+            self.env = wrappers.Monitor(env, './logs/videos', force=True, video_callable=lambda episode_id: True)
+            self.n_agents = 1
+            self.observation_space = [self.env.observation_space]
+            self.action_space = [self.env.action_space]
         if suite == "gym":
             self.env = gym.make(env_name)
             self.n_agents = 1
@@ -40,7 +50,8 @@ class EnvWrapper:
             # if self.env.action_space.dtype == dtype('float32'):
             #    self.action_type = "continuous"
         if suite == "custom":
-            self.env = WaypointsEnv()
+            namedict = {"waypoints.py": WaypointsEnv, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
+            self.env = namedict[env_name]()
             self.n_agents = self.env.n
             self.action_space = self.env.action_space
             self.observation_space = self.env.observation_space
@@ -69,15 +80,20 @@ class EnvWrapper:
         :param actions: list containing numpy arrays with actions.
         :type actions: list
         """
-        if self.suite == "gym":
+        if self.suite == "gym" or self.suite == "gym-record":
             return tuple([obj] for obj in self.env.step(actions[0]))
         return self.env.step(actions)
     
     def reset(self):
         """reset."""
-        if self.suite == "gym":
+        if self.suite == "gym" or self.suite == "gym-record":
             return [self.env.reset()]
         return self.env.reset()
 
     def render(self):
         return self.env.render()
+
+    def close(self):
+        self.env.close()
+        if self.wrapped_env:
+            self.wrapped_env.close()

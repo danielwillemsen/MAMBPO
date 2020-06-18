@@ -1,5 +1,5 @@
 import pickle as p
-
+import time
 import os,sys
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 def scale_action(env, agent_id, action):
     return (env.action_space[agent_id].high-env.action_space[agent_id].low)*action + env.action_space[agent_id].low
 
-def run_episode(env, agents, eval=False,render=False, steps=100):
+def run_episode(env, agents, eval=False,render=False, steps=2000):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -47,21 +47,24 @@ def run_episode(env, agents, eval=False,render=False, steps=100):
             env.render()
     for j, agent in enumerate(agents):
         agent.reset()
-    return reward_tot 
+    return reward_tot
 
 def train(env, agents, n_episodes=10000):
     scores = []
+    times = []
+    time_start = time.time()
     for i in range(n_episodes):
         print("Episode: " + str(i))
-        if i%2 == 0:
+        if i%200 == 9990:
             score = run_episode(env, agents, eval=True)
-        elif i%1 ==0:
-            score = run_episode(env, agents, render=True)
         else:
             score = run_episode(env, agents)
         scores.append(score)
+        t = time.time() - time_start
+        times.append(t)
+        print("Time elapsed:", t, " s")
         print("Score: " + str(score))
-    return scores
+    return {"scores": scores, "times": times}
 
 if __name__ == '__main__':
     import argparse
@@ -72,50 +75,68 @@ if __name__ == '__main__':
     args = parser.parse_args()
     agent_dict = {"HDDPGAgent": HDDPGAgent, "TD3": TD3, "ModelAgent": ModelAgent}
 
-    # Checks for valid argument
-    assert args.alg in agent_dict.keys(), "Invalid algorithm selected: {}. Available are: {}".format(args.alg, str(agent_dict.keys()))
-    agent_fn = agent_dict[args.alg] 
-    
     # Create environment
-    env = EnvWrapper(args.suite, args.name)
+    env = EnvWrapper("gym", "Pendulum-v0")
 
     # execution loop
-    n_runs = 10
+    n_runs = 3
     logdata = dict()
-    logdata["f_hyst=1.0"] = []
-    logdata["f_hyst=0.5"] = []
-    logdata["f_hyst=0.25"] = []
 
     for run in range(n_runs):
-        name = "f_hyst=1.0"
+        agent_fn = HDDPGAgent
+        name = agent_fn.__name__
+        if name not in logdata:
+            logdata[name] = []
         obs_n = env.reset()
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
-        for agent in agents:
-            agent.f_hyst = 1.0
-        logdata[name].append(train(env,agents))
-        p.dump(logdata, open("./logs/exp_mult6","wb"))
+        logdata[name].append(train(env, agents, n_episodes=50))
+        p.dump(logdata, open("./logs/pendulum2", "wb"))
+        env.close()
+        
+        agent_fn = TD3
+        name = agent_fn.__name__
+        if name not in logdata:
+            logdata[name] = []
+        obs_n = env.reset()
+        agents = []
+        for i in range(env.n_agents):
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
+        logdata[name].append(train(env, agents, n_episodes=50))
+        p.dump(logdata, open("./logs/pendulum2", "wb"))
+        env.close()
 
-        name = "f_hyst=0.5"
+        agent_fn = ModelAgent
+        name = agent_fn.__name__
+        if name not in logdata:
+            logdata[name] = []
         obs_n = env.reset()
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
-        for agent in agents:
-            agent.f_hyst = 0.5
-        logdata[name].append(train(env,agents))
-        p.dump(logdata, open("./logs/exp_mult6","wb"))
-
-        name = "f_hyst=0.25"
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
-        for agent in agents:
-            agent.f_hyst = 0.25
-        logdata[name].append(train(env,agents))
-        p.dump(logdata, open("./logs/exp_mult6","wb"))
+        logdata[name].append(train(env, agents, n_episodes=10))
+        p.dump(logdata, open("./logs/pendulum2", "wb"))
+        env.close()
+        # name = "f_hyst=0.5"
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
+        # for agent in agents:
+        #     agent.f_hyst = 0.5
+        # logdata[name].append(train(env,agents))
+        # p.dump(logdata, open("./logs/exp_mult6","wb"))
+        #
+        # name = "f_hyst=0.25"
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
+        # for agent in agents:
+        #     agent.f_hyst = 0.25
+        # logdata[name].append(train(env,agents))
+        # p.dump(logdata, open("./logs/exp_mult6","wb"))
 
     # name = "f_hyst=0.5"
     # run_data = []
