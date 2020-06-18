@@ -6,7 +6,13 @@ import matplotlib.pyplot as plt
 
 sns.set(style="darkgrid")
 
-data = p.load(open("./logs/delay", "rb"))
+data = dict()
+files = []
+for dat in ["./logs/updates2","./logs/batch"]:
+    if data:
+        data = data.update(p.load(open(dat, "rb")))
+    else:
+        data = p.load(open(dat,"rb"))
 
 frames = dict()
 for key, dat in data.items():

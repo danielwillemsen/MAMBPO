@@ -84,7 +84,7 @@ if __name__ == '__main__':
 
     for run in range(n_runs):
         agent_fn = TD3
-        agent_kwargs = {"delay": 2}
+        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2, "batch_size": 256}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
         if name not in logdata:
@@ -94,11 +94,11 @@ if __name__ == '__main__':
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
         logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open("./logs/delay", "wb"))
+        p.dump(logdata, open("./logs/batch", "wb"))
         env.close()
         
         agent_fn = TD3
-        agent_kwargs = {"delay": 1}
+        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2, "batch_size": 512}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
         if name not in logdata:
@@ -108,7 +108,7 @@ if __name__ == '__main__':
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
         logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open("./logs/delay", "wb"))
+        p.dump(logdata, open("./logs/batch", "wb"))
         env.close()
 
         # name = "f_hyst=0.5"
