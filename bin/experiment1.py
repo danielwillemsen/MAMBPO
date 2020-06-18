@@ -79,45 +79,38 @@ if __name__ == '__main__':
     env = EnvWrapper("gym", "Pendulum-v0")
 
     # execution loop
-    n_runs = 3
+    n_runs = 5
     logdata = dict()
 
     for run in range(n_runs):
-        agent_fn = HDDPGAgent
-        name = agent_fn.__name__
+        agent_fn = TD3
+        agent_kwargs = {"delay": 2}
+        name = agent_fn.__name__+ str(agent_kwargs)
+        print(name)
         if name not in logdata:
             logdata[name] = []
         obs_n = env.reset()
         agents = []
         for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
         logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open("./logs/pendulum2", "wb"))
+        p.dump(logdata, open("./logs/delay", "wb"))
         env.close()
         
         agent_fn = TD3
-        name = agent_fn.__name__
+        agent_kwargs = {"delay": 1}
+        name = agent_fn.__name__+ str(agent_kwargs)
+        print(name)
         if name not in logdata:
             logdata[name] = []
         obs_n = env.reset()
         agents = []
         for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
         logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open("./logs/pendulum2", "wb"))
+        p.dump(logdata, open("./logs/delay", "wb"))
         env.close()
 
-        agent_fn = ModelAgent
-        name = agent_fn.__name__
-        if name not in logdata:
-            logdata[name] = []
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
-        logdata[name].append(train(env, agents, n_episodes=10))
-        p.dump(logdata, open("./logs/pendulum2", "wb"))
-        env.close()
         # name = "f_hyst=0.5"
         # obs_n = env.reset()
         # agents = []

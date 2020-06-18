@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 sns.set(style="darkgrid")
 
-data = p.load(open("./logs/pendulum2", "rb"))
+data = p.load(open("./logs/delay", "rb"))
 
 frames = dict()
 for key, dat in data.items():
@@ -19,6 +19,10 @@ for key, dat in data.items():
     frames[key] = frame
 
 for name, frame in frames.items():
+    if name == "HDDPGAgent":
+        name = "DDPG"
+    elif name == "ModelAgent":
+        name = "Model-Based TD3"
     ax = sns.lineplot(x="episode", y="score", data=frame, label=name)
     #ax.set(ylim=(,1)
     #ax.set(yscale="log")
