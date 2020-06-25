@@ -58,7 +58,7 @@ def train(env, agents, n_episodes=10000):
         if i%200 == 9990:
             score = run_episode(env, agents, eval=True)
         else:
-            score = run_episode(env, agents)
+            score = run_episode(env, agents, render=True)
         scores.append(score)
         t = time.time() - time_start
         times.append(t)
@@ -83,34 +83,91 @@ if __name__ == '__main__':
     logdata = dict()
 
     for run in range(n_runs):
-        agent_fn = TD3
-        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2, "batch_size": 256}
+        # agent_fn = ModelAgent
+        # agent_kwargs = {"update_every_n_steps": 50, "update_steps": 200, "n_models": 20}
+        # name = agent_fn.__name__+ str(agent_kwargs)
+        # print(name)
+        # if name not in logdata:
+        #     logdata[name] = []
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        # logdata[name].append(train(env, agents, n_episodes=10))
+        # p.dump(logdata, open("./logs/pendu3", "wb"))
+        # env.close()
+        #
+        agent_fn = ModelAgent
+        agent_kwargs = {"update_every_n_steps": 5, "update_steps": 10, "n_models": 10}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
+        env.env.seed(seed=run)
         if name not in logdata:
             logdata[name] = []
         obs_n = env.reset()
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open("./logs/batch", "wb"))
+        logdata[name].append(train(env, agents, n_episodes=10))
+        p.dump(logdata, open("./logs/pendu4", "wb"))
         env.close()
-        
-        agent_fn = TD3
-        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2, "batch_size": 512}
-        name = agent_fn.__name__+ str(agent_kwargs)
-        print(name)
-        if name not in logdata:
-            logdata[name] = []
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open("./logs/batch", "wb"))
-        env.close()
+        # agent_fn = ModelAgent
+        # agent_kwargs = {"update_every_n_steps": 50, "update_steps": 100, "n_models": 20}
+        # name = agent_fn.__name__+ str(agent_kwargs)
+        # print(name)
+        # if name not in logdata:
+        #     logdata[name] = []
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        # logdata[name].append(train(env, agents, n_episodes=10))
+        # p.dump(logdata, open("./logs/pendu4", "wb"))
+        # env.close()
 
+        agent_fn = HDDPGAgent
+        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 1}
+        name = agent_fn.__name__+ str(agent_kwargs)
+        print(name)
+        env.env.seed(seed=run)
+
+        if name not in logdata:
+            logdata[name] = []
+        obs_n = env.reset()
+        agents = []
+        for i in range(env.n_agents):
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        logdata[name].append(train(env, agents, n_episodes=20))
+        p.dump(logdata, open("./logs/pendu4", "wb"))
+        env.close()
+        agent_fn = TD3
+        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 1}
+        name = agent_fn.__name__+ str(agent_kwargs)
+        print(name)
+        env.env.seed(seed=run)
+
+        if name not in logdata:
+            logdata[name] = []
+        obs_n = env.reset()
+        agents = []
+        for i in range(env.n_agents):
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        logdata[name].append(train(env, agents, n_episodes=20))
+        p.dump(logdata, open("./logs/pendu4", "wb"))
+        env.close()
+        # agent_fn = TD3
+        # agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2}
+        # name = agent_fn.__name__+ str(agent_kwargs)
+        # print(name)
+        # if name not in logdata:
+        #     logdata[name] = []
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        # logdata[name].append(train(env, agents, n_episodes=50))
+        # p.dump(logdata, open("./logs/pendu4", "wb"))
+        # env.close()
         # name = "f_hyst=0.5"
         # obs_n = env.reset()
         # agents = []

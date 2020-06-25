@@ -9,6 +9,7 @@ from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import Actor
 from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import Model
+from decentralizedlearning.algs.utils import loss_critic
 
 class ModelAgentHyperPar:
     def __init__(self, **kwargs):
@@ -24,12 +25,13 @@ class ModelAgentHyperPar:
         self.delay = int(kwargs.get("delay", 2))
         self.lr_actor = float(kwargs.get("lr_actor", 0.001))
         self.lr_critic = float(kwargs.get("lr_critic", 0.001))
-        self.lr_model = float(kwargs.get("lr_model", 0.001))
+        self.lr_model = float(kwargs.get("lr_model", 0.0001))
         self.step_random = int(kwargs.get("step_random", 500))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 50))
         self.update_steps = int(kwargs.get("update_steps", 200))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
+        self.f_hyst = float(kwargs.get("f_hyst", 1.0))
 
 class ModelAgent:
     def __init__(self, obs_dim, action_dim, *args, **kwargs):
@@ -87,11 +89,6 @@ class ModelAgent:
         self.a_old = None
         if self.par.use_OU:
             self.ou.reset()
-
-    def loss_critic(self, val, target):
-        diffs = target - val
-        # diffs[diffs < 0] *= self.f_hyst
-        return torch.mean(diffs**2)
 
     def step(self, o, r, eval=False, done=False):
         o = torch.Tensor(o)
@@ -185,7 +182,7 @@ class ModelAgent:
             y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * torch.min(
                 *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target])
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
-            loss = self.loss_critic(critic(b["o"], b["a"]), y)
+            loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
 
             if (np.random.random() < 0.001):
                 print("Loss:", loss)

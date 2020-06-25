@@ -6,11 +6,11 @@ import time
 from decentralizedlearning.algs.utils import ReplayBuffer
 
 from decentralizedlearning.algs.utils import Critic
-from decentralizedlearning.algs.utils import Actor
+from decentralizedlearning.algs.utils import StochActor
 from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import loss_critic
 
-class TD3HyperPar:
+class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
                                              (256, 256)))
@@ -25,27 +25,26 @@ class TD3HyperPar:
         self.lr_actor = float(kwargs.get("lr_actor", 0.001))
         self.lr_critic = float(kwargs.get("lr_critic", 0.001))
         self.lr_model = float(kwargs.get("lr_model", 0.001))
-        self.step_random = int(kwargs.get("step_random", 500))
+        self.step_random = int(kwargs.get("step_random", 0))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
-        self.update_steps = int(kwargs.get("update_steps", 1))
+        self.update_steps = int(kwargs.get("update_steps", 2))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
-        self.action_noise = float(kwargs.get("action_noise", 0.3))
-        self.weight_decay = float(kwargs.get("weight_decay", 0.0))
-
+        self.weight_decay = float(kwargs.get("weight_decay", 0.0000))
+        self.alpha = float(kwargs.get("alpha",0.2))
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
 
-class TD3:
+class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
         if hyperpar:
             self.par = hyperpar
         else:
-            self.par = TD3HyperPar(**kwargs)
+            self.par = SACHyperPar(**kwargs)
         self.action_dim = action_dim
 
         # Initialize actor
-        self.actor = Actor(obs_dim, self.par.hidden_dims_actor,  action_dim)
+        self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim)
         self.actor_target = copy.deepcopy(self.actor)
         self.optimizer_actor = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.par.lr_actor,
@@ -134,14 +133,11 @@ class TD3:
             return torch.rand(self.action_dim)
 
         with torch.no_grad():
-            action = self.actor(o.unsqueeze(0)).squeeze()
-            if method == "noisy":
-                if self.par.use_OU:
-                    action = action + torch.Tensor(self.ou.noise())[0]
-                else:
-                    action = action + torch.randn(action.size()) * self.par.action_noise
-                action = torch.clamp(action, 0., 1.0)
-        return action
+            if method == "greedy":
+                action = self.actor(o.unsqueeze(0), greedy=True).squeeze()
+            else:
+                action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
+            return action
 
     def update_target_networks(self):
         with torch.no_grad():
@@ -157,8 +153,9 @@ class TD3:
         for par in self.critics[0].parameters():
             par.requires_grad = False
         self.optimizer_actor.zero_grad()
+        act, logp_pi = self.actor(b["o_next"], sample=False)
         loss_actor = - \
-            torch.mean(self.critics[0](b["o"], self.actor(b["o"])))
+            torch.mean(self.critics[0](b["o"], act) - logp_pi * self.par.alpha)
         loss_actor.backward()
         self.optimizer_actor.step()
         for par in self.critics[0].parameters():
@@ -166,15 +163,14 @@ class TD3:
 
     def update_critics(self, b):
         with torch.no_grad():
-            a_target = self.actor_target(b["o_next"])
-            a_target = torch.clamp(
-                a_target + torch.clamp(torch.randn(a_target.size()) * 0.1, -0.5, 0.5), 0., 1.)
-            y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * torch.min(
-                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target])
+            a_target, logp_pi = self.actor_target(b["o_next"], sample=False)
+            y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * (torch.min(
+                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target]) - self.par.alpha * logp_pi)
+
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
 
-            if (np.random.random() < 0.001):
+            if (np.random.random() < 0.01):
                 print("Loss:", loss)
                 print("Mean Q:", torch.mean(y))
             # print(time.time() - self.time)
