@@ -8,7 +8,7 @@ sns.set(style="darkgrid")
 
 data = dict()
 files = []
-for dat in ["./logs/pendu4"]:
+for dat in ["./logs/pendu5"]:
     if data:
         data.update(p.load(open(dat, "rb")))
     else:
@@ -25,12 +25,12 @@ for key, dat in data.items():
     frames[key] = frame
 
 for name, frame in frames.items():
-    if "HDDPGAgent" in name:
-        name = "DDPG"
-    elif "Model" in name:
-        name = "Model-Based TD3"
-    else:
-        name = "TD3"
+    # if "HDDPGAgent" in name:
+    #     name = "DDPG"
+    # elif "Model" in name:
+    #     name = "Model-Based TD3"
+    # else:
+    #     name = "TD3"
     ax = sns.lineplot(x="episode", y="score", data=frame, label=name)
     #ax.set(ylim=(,1)
     #ax.set(yscale="log")

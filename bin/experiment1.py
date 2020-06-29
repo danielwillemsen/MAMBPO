@@ -79,7 +79,7 @@ if __name__ == '__main__':
     env = EnvWrapper("gym", "Pendulum-v0")
 
     # execution loop
-    n_runs = 5
+    n_runs = 10
     logdata = dict()
 
     for run in range(n_runs):
@@ -96,21 +96,21 @@ if __name__ == '__main__':
         # logdata[name].append(train(env, agents, n_episodes=10))
         # p.dump(logdata, open("./logs/pendu3", "wb"))
         # env.close()
-        #
-        agent_fn = ModelAgent
-        agent_kwargs = {"update_every_n_steps": 5, "update_steps": 10, "n_models": 10}
-        name = agent_fn.__name__+ str(agent_kwargs)
-        print(name)
-        env.env.seed(seed=run)
-        if name not in logdata:
-            logdata[name] = []
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=10))
-        p.dump(logdata, open("./logs/pendu4", "wb"))
-        env.close()
+        # #
+        # agent_fn = ModelAgent
+        # agent_kwargs = {"update_every_n_steps": 5, "update_steps": 10, "n_models": 10}
+        # name = agent_fn.__name__+ str(agent_kwargs)
+        # print(name)
+        # env.env.seed(seed=run)
+        # if name not in logdata:
+        #     logdata[name] = []
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        # logdata[name].append(train(env, agents, n_episodes=10))
+        # p.dump(logdata, open("./logs/pendu4", "wb"))
+        # env.close()
         # agent_fn = ModelAgent
         # agent_kwargs = {"update_every_n_steps": 50, "update_steps": 100, "n_models": 20}
         # name = agent_fn.__name__+ str(agent_kwargs)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
         # env.close()
 
         agent_fn = HDDPGAgent
-        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 1}
+        agent_kwargs = {"n_steps": 5}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
         env.env.seed(seed=run)
@@ -138,10 +138,11 @@ if __name__ == '__main__':
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
         logdata[name].append(train(env, agents, n_episodes=20))
-        p.dump(logdata, open("./logs/pendu4", "wb"))
+        p.dump(logdata, open("./logs/pendu5", "wb"))
         env.close()
-        agent_fn = TD3
-        agent_kwargs = {"update_every_n_steps": 1, "update_steps": 1}
+
+        agent_fn = HDDPGAgent
+        agent_kwargs = {"use_model": True, "n_steps": 5}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
         env.env.seed(seed=run)
@@ -153,7 +154,7 @@ if __name__ == '__main__':
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
         logdata[name].append(train(env, agents, n_episodes=20))
-        p.dump(logdata, open("./logs/pendu4", "wb"))
+        p.dump(logdata, open("./logs/pendu5", "wb"))
         env.close()
         # agent_fn = TD3
         # agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2}
