@@ -13,22 +13,22 @@ from decentralizedlearning.algs.utils import Model
 class HDDPGHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (128, 128)))
-        self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (128,)))
-        self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
                                              (256, 256)))
+        self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
+                                              (256, 256)))
+        self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
+                                             (256, 256, 256)))
         self.use_OU = bool(kwargs.get("use_OU", False))
         self.gamma = float(kwargs.get("gamma", 0.99))
         self.tau = float(kwargs.get("tau", 0.005))
         self.delay = int(kwargs.get("delay", 2))
-        self.lr_actor = float(kwargs.get("lr_actor", 0.001))
-        self.lr_critic = float(kwargs.get("lr_critic", 0.001))
-        self.lr_model = float(kwargs.get("lr_model", 0.0005))
-        self.step_random = int(kwargs.get("step_random", 500))
+        self.lr_actor = float(kwargs.get("lr_actor", 0.0005))
+        self.lr_critic = float(kwargs.get("lr_critic", 0.0005))
+        self.lr_model = float(kwargs.get("lr_model", 0.000025))
+        self.step_random = int(kwargs.get("step_random", 250))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_steps = int(kwargs.get("update_steps", 1))
-        self.n_models = int(kwargs.get("n_models", 5))
+        self.n_models = int(kwargs.get("n_models", 3))
         self.batch_size = int(kwargs.get("batch_size", 128))
         self.action_noise = float(kwargs.get("action_noise", 0.3))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0))
@@ -55,6 +55,8 @@ class HDDPGAgent:
             self.ou = OUNoise(action_dim)
 
         self.buffer = ReplayBuffer()
+        self.tempbuf = ReplayBuffer(size=1000)
+
         self.o_old = None
         self.a_old = None
 
@@ -83,7 +85,7 @@ class HDDPGAgent:
         done = torch.Tensor(np.array(float(done)))
         if eval:
             action = self.ac.actor(o.unsqueeze(0)).squeeze()
-            action = torch.clamp(action, 0., 1.0)
+            action = torch.clamp(action, -1., 1.0)
             return action.detach().numpy()
         if self.o_old is not None:
             self.buffer.add((self.o_old, self.a_old, r, o, done))
@@ -93,6 +95,10 @@ class HDDPGAgent:
                 if self.par.use_model:
                     self.update_models()
 
+            if self.par.use_model:
+                self.generate_from_model()
+
+            for i in range(self.par.n_steps):
                 self.update_step()
 
         # Select Action
@@ -111,8 +117,9 @@ class HDDPGAgent:
         if not self.par.use_model:
             b = self.buffer.sample_tensors(n=self.par.batch_size)
         else:
-            model = random.choice(self.models)
-            b = self.sample_from_model(model)
+            #model = random.choice(self.models)
+            #b = self.sample_from_model(model)
+            b = self.tempbuf.sample_tensors(n=self.par.batch_size)
 
         # Update Critic
         self.update_critic(b)
@@ -139,15 +146,9 @@ class HDDPGAgent:
     def update_critic(self, b):
         self.optimizer_critic.zero_grad()
         with torch.no_grad():
-            y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * self.ac_target.critic(b["o_next"],
+            y = b["r"].unsqueeze(-1) + (1 - b["done"].unsqueeze(-1)) * self.par.gamma * self.ac_target.critic(b["o_next"],
                                                                                                 self.ac_target.actor(
                                                                                                     b["o_next"]))
-            y2 = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * self.ac_target.critic(b["o_next"],
-                                                                                            self.ac_target.actor(
-                                                                                                b["o_next"])+0.05)
-            y3 = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * self.ac_target.critic(b["o_next"],
-                                                                                            self.ac_target.actor(
-                                                                                                b["o_next"])-0.05)
         # print(torch.mean(y3-y2))
         loss_c = loss_critic(self.ac.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
         loss_c.backward()
@@ -164,8 +165,8 @@ class HDDPGAgent:
                 if self.par.use_OU:
                     action = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action = action + torch.randn(action.size()) * 0.3
-                action = torch.clamp(action, 0., 1.0)
+                    action = action + torch.randn(action.size()) * 0.1
+                action = torch.clamp(action, -1.0, 1.0)
         return action
 
     def update_models(self):
@@ -177,16 +178,33 @@ class HDDPGAgent:
         # Sample Minibatch
         b = self.buffer.sample_tensors(n=self.par.batch_size)
         with torch.no_grad():
-            action = self.ac.actor(b["o"])
+            action = self.ac_target.actor(b["o"])
             if self.par.use_OU:
                 action_noisy = action + torch.Tensor(self.ou.noise())[0]
             else:
-                action_noisy = action + torch.randn(action.size()) * 0.3
-            b["a"] = torch.clamp(action_noisy, 0., 1.0)
+                action_noisy = action + torch.randn(action.size()) * 0.1
+            b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
         new_o, r = model.sample(b["o"], b["a"])
         b["o_next"] = new_o
         b["r"] = r.squeeze()
         return b
+
+    def generate_from_model(self, rollout=1, batches=1, size=32):
+        for batch in range(batches):
+            b = self.buffer.sample_tensors(n=size).copy()
+            for _ in range(rollout):
+                model = random.choice(self.models)
+                with torch.no_grad():
+                    action = self.ac_target.actor(b["o"])
+                    if self.par.use_OU:
+                        action_noisy = action + torch.Tensor(self.ou.noise())[0]
+                    else:
+                        action_noisy = action + torch.randn(action.size()) * 0.6
+                    b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
+                new_o, r = model.sample(b["o"], b["a"])
+                for o, a, new_oi, new_ri, done in zip(b["o"], b["a"], new_o, r, b["done"]):
+                    self.tempbuf.add((o, a, new_ri, new_oi, done))
+                b = {"o": new_o, "done": b["done"]}
 
     def model_step(self, model, optim, samples):
         o_next_pred, r_pred = model(samples["o"], samples["a"])
@@ -197,9 +215,10 @@ class HDDPGAgent:
         loss1 = torch.mean((mu - target) / sigma ** 2 * (mu - target))
         loss3 = torch.mean(torch.log(torch.prod(sigma ** 2, 1) * torch.prod(sigma_2 ** 2, 1)))
         mu = r_pred[0]
-        target = samples["r"].unsqueeze(1)
+        target = samples["r"].unsqueeze(-1)
         loss2 = torch.mean((mu - target) / sigma_2 ** 2 * (mu - target))
         loss = loss1 + loss2 + loss3
+        # print(loss)
         optim.zero_grad()
         loss.backward()
         optim.step()

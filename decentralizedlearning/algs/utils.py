@@ -26,10 +26,10 @@ class OUNoise:
         return self.state
 
 class ReplayBuffer():
-    def __init__(self):
+    def __init__(self, size=200000):
         self.buffer = []
         self.n_samples = 128
-        self.max_size = 2000000
+        self.max_size = size
 
     def len(self):
         return len(self.buffer)
@@ -66,7 +66,7 @@ class Actor(nn.Module):
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
         for i in range(len(hidden_dims)-1):
             layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
-        layers += [nn.Linear(hidden_dims[-1], output_dim), nn.Sigmoid()]
+        layers += [nn.Linear(hidden_dims[-1], output_dim), nn.Tanh()]
         self.net = nn.Sequential(*layers)
 
     def forward(self, observation):
@@ -146,7 +146,7 @@ class Model(nn.Module):
         with torch.no_grad():
             new_o, r = self.forward(observation, action)
             new_o = torch.normal(new_o[0], new_o[1])
-            r = torch.normal(r[0], r[1]*0.)
+            r = torch.normal(r[0], r[1])
         return new_o, r
 
 
