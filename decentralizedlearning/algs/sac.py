@@ -27,11 +27,11 @@ class SACHyperPar:
         self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.step_random = int(kwargs.get("step_random", 0))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
-        self.update_steps = int(kwargs.get("update_steps", 2))
+        self.update_steps = int(kwargs.get("update_steps", 1))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0000))
-        self.alpha = float(kwargs.get("alpha",0.2))
+        self.alpha = float(kwargs.get("alpha",0.01))
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
 
 class SAC:

@@ -10,7 +10,7 @@ import multiagent.scenarios as scenarios
 from waypoints import WaypointsEnv
 from crossing import CrossingEnv
 import numpy as np
-from crossing import ContinuousCrossingEnv
+from continuouscrossing import ContinuousCrossingEnv
 from gym import wrappers
 
 class EnvWrapper:
