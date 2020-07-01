@@ -129,7 +129,7 @@ class HDDPGAgent:
             self.a_old = action
 
         self.i_step += 1
-        return action.detach().numpy()
+        return action.detach().cpu().numpy()
 
     def update_step(self):
         # Sample Minibatch
@@ -160,16 +160,16 @@ class HDDPGAgent:
                 action_noisy = action + torch.randn(action.size()) * 0.3
             b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
         for i in range(len(b["a"])):
-            a = b["a"][i].numpy()
-            o = b["o"][i].numpy()
-            obs_should = b["o_next"][i].numpy()
-            r_should = b["r"][i].numpy()
+            a = b["a"][i].cpu().numpy()
+            o = b["o"][i].cpu().numpy()
+            obs_should = b["o_next"][i].cpu().numpy()
+            r_should = b["r"][i].cpu().numpy()
             self.fake_env.state = np.array([np.arctan2(o[1], o[0]), o[2]])
             o2 = self.fake_env._get_obs()
             obs, r, _, _2 = self.fake_env.step(a[0]*0.5*(self.fake_env.action_space.high-self.fake_env.action_space.low))
 
-            b["o_next"][i] = torch.from_numpy(obs)
-            b["r"][i] = torch.from_numpy(np.array([r]))
+            b["o_next"][i] = torch.from_numpy(obs).to("self.device")
+            b["r"][i] = torch.from_numpy(np.array([r])).to("self.device")
         return b
 
     def update_target_networks(self):
