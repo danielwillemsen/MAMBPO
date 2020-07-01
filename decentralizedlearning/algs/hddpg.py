@@ -157,7 +157,7 @@ class HDDPGAgent:
             if self.par.use_OU:
                 action_noisy = action + torch.Tensor(self.ou.noise())[0]
             else:
-                action_noisy = action + torch.randn(action.size()) * 0.3
+                action_noisy = action + torch.randn(action.size()).to(self.device) * 0.3
             b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
         for i in range(len(b["a"])):
             a = b["a"][i].cpu().numpy()
@@ -225,7 +225,7 @@ class HDDPGAgent:
             if self.par.use_OU:
                 action_noisy = action + torch.Tensor(self.ou.noise())[0]
             else:
-                action_noisy = action + torch.randn(action.size()) * 0.3
+                action_noisy = action + torch.randn(action.size()).to(self.device) * 0.3
             b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
         new_o, r = model.sample(b["o"], b["a"])
         b["o_next"] = new_o
