@@ -42,7 +42,12 @@ class HDDPGHyperPar:
 class HDDPGAgent:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
-
+        if torch.cuda.is_available():
+            print("Using CUDA")
+            self.device = torch.device("cuda")
+        else:
+            print("No CUDA found")
+            self.device = torch.device("cpu")
         if hyperpar:
             self.par = hyperpar
         else:
@@ -55,6 +60,10 @@ class HDDPGAgent:
 
         self.ac = ActorCritic(obs_dim, action_dim, hidden_dims_actor=self.par.hidden_dims_actor, hidden_dims_critic=self.par.hidden_dims_critic)
         self.ac_target = copy.deepcopy(self.ac)
+
+        self.ac.to(self.device)
+        self.ac_target.to(self.device)
+
         for par in self.ac_target.parameters():
             par.requires_grad = False
 
@@ -88,9 +97,9 @@ class HDDPGAgent:
             self.ou.reset()
 
     def step(self, o, r, eval=False, done=False):
-        o = torch.Tensor(o)
-        r = torch.Tensor(np.array(float(r)))
-        done = torch.Tensor(np.array(float(done)))
+        o = torch.Tensor(o).to(self.device)
+        r = torch.Tensor(np.array(float(r))).to(self.device)
+        done = torch.Tensor(np.array(float(done))).to(self.device)
         if eval:
             action = self.ac.actor(o.unsqueeze(0)).squeeze()
             action = torch.clamp(action, -1., 1.0)
