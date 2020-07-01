@@ -172,7 +172,8 @@ if __name__ == '__main__':
         # logdata[name].append(train(env, agents, n_episodes=10))
         # p.dump(logdata, open(logfile, "wb"))
         # env.close()
-        # agent_fn = HDDPGAgent
+
+        agent_fn = HDDPGAgent
 
         agent_kwargs = {"use_model": True, "n_steps": 10}
         name = agent_fn.__name__+ str(agent_kwargs)
