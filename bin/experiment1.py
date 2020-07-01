@@ -58,7 +58,7 @@ def train(env, agents, n_episodes=10000):
         if i%200 == 9990:
             score = run_episode(env, agents, eval=True)
         else:
-            score = run_episode(env, agents, render=True)
+            score = run_episode(env, agents, render=False)
         scores.append(score)
         t = time.time() - time_start
         times.append(t)

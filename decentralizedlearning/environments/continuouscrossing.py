@@ -1,6 +1,6 @@
 import numpy as np
 from gym import spaces
-from gym.envs.classic_control import rendering
+# from gym.envs.classic_control import rendering
 
 
 class Agent:
