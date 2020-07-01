@@ -24,25 +24,32 @@ class HDDPGHyperPar:
         self.delay = int(kwargs.get("delay", 2))
         self.lr_actor = float(kwargs.get("lr_actor", 0.0005))
         self.lr_critic = float(kwargs.get("lr_critic", 0.0005))
-        self.lr_model = float(kwargs.get("lr_model", 0.000025))
+        self.lr_model = float(kwargs.get("lr_model", 0.0001))
+        self.l2_norm = float(kwargs.get("l2_norm", 0.0))
         self.step_random = int(kwargs.get("step_random", 250))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_steps = int(kwargs.get("update_steps", 1))
-        self.n_models = int(kwargs.get("n_models", 3))
+        self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
         self.action_noise = float(kwargs.get("action_noise", 0.3))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0))
         self.use_model = bool(kwargs.get("use_model", False))
         self.n_steps = int(kwargs.get("n_steps", 1))
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
+        self.use_double = bool(kwargs.get("use_double", False))
+        self.use_real_model = bool(kwargs.get("use_real_model", False))
 
 class HDDPGAgent:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
+
         if hyperpar:
             self.par = hyperpar
         else:
             self.par = HDDPGHyperPar(**kwargs)
+        if self.par.use_real_model:
+            from gym.envs.classic_control.pendulum import PendulumEnv
+            self.fake_env = PendulumEnv()
 
         self.action_dim = action_dim
 
@@ -55,13 +62,13 @@ class HDDPGAgent:
             self.ou = OUNoise(action_dim)
 
         self.buffer = ReplayBuffer()
-        self.tempbuf = ReplayBuffer(size=1000)
+        self.tempbuf = ReplayBuffer(size=5000)
 
         self.o_old = None
         self.a_old = None
 
-        self.optimizer_critic = torch.optim.Adam(self.ac.critic.parameters(), lr=self.par.lr_critic, amsgrad=True)
-        self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=self.par.lr_actor, amsgrad=True)
+        self.optimizer_critic = torch.optim.Adam(self.ac.critic.parameters(), lr=self.par.lr_critic, amsgrad=True, weight_decay=self.par.l2_norm)
+        self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=self.par.lr_actor, amsgrad=True, weight_decay=self.par.l2_norm)
 
         # Initialize models
         if self.par.use_model:
@@ -71,7 +78,8 @@ class HDDPGAgent:
                 model = Model(obs_dim + action_dim, self.par.hidden_dims_model, obs_dim)
                 self.models.append(model)
                 self.optimizer_models.append(torch.optim.Adam(model.parameters(),
-                                                              lr=self.par.lr_model, amsgrad=True))
+                                                              lr=self.par.lr_model, amsgrad=True, weight_decay=self.par.l2_norm))
+        self.i_step = 0
 
     def reset(self):
         self.o_old = None
@@ -80,7 +88,7 @@ class HDDPGAgent:
             self.ou.reset()
 
     def step(self, o, r, eval=False, done=False):
-        o = torch.Tensor(-1.*o)
+        o = torch.Tensor(o)
         r = torch.Tensor(np.array(float(r)))
         done = torch.Tensor(np.array(float(done)))
         if eval:
@@ -91,15 +99,15 @@ class HDDPGAgent:
             self.buffer.add((self.o_old, self.a_old, r, o, done))
 
         if self.buffer.len() > self.buffer.n_samples:
-            for i in range(self.par.n_steps):
-                if self.par.use_model:
+            for i in range(10):
+                if self.par.use_model and not self.par.use_real_model:
                     self.update_models()
 
-            if self.par.use_model:
-                self.generate_from_model()
-
-            for i in range(self.par.n_steps):
-                self.update_step()
+            # if self.par.use_model:
+            #     self.generate_from_model()
+            if self.i_step % self.par.update_every_n_steps == 0:
+                for i in range(self.par.n_steps*self.par.update_every_n_steps):
+                    self.update_step()
 
         # Select Action
         action = self.select_action(o, "noisy")
@@ -110,16 +118,20 @@ class HDDPGAgent:
             self.a_old = action.unsqueeze(0)
         else:
             self.a_old = action
+
+        self.i_step += 1
         return action.detach().numpy()
 
     def update_step(self):
         # Sample Minibatch
         if not self.par.use_model:
             b = self.buffer.sample_tensors(n=self.par.batch_size)
+        elif not self.par.use_real_model:
+            model = random.choice(self.models)
+            b = self.sample_from_model(model)
         else:
-            #model = random.choice(self.models)
-            #b = self.sample_from_model(model)
-            b = self.tempbuf.sample_tensors(n=self.par.batch_size)
+            b = self.sample_from_real_model()
+            # b = self.tempbuf.sample_tensors(n=self.par.batch_size)
 
         # Update Critic
         self.update_critic(b)
@@ -127,6 +139,29 @@ class HDDPGAgent:
         self.update_actor(b)
         # Update Target Networks
         self.update_target_networks()
+
+    def sample_from_real_model(self):
+        # Sample Minibatch
+        b = self.buffer.sample_tensors(n=self.par.batch_size)
+        with torch.no_grad():
+            action = b["a"] #self.ac.actor(b["o"])
+            if self.par.use_OU:
+                action_noisy = action + torch.Tensor(self.ou.noise())[0]
+            else:
+                action_noisy = action + torch.randn(action.size()) * 0.3
+            b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
+        for i in range(len(b["a"])):
+            a = b["a"][i].numpy()
+            o = b["o"][i].numpy()
+            obs_should = b["o_next"][i].numpy()
+            r_should = b["r"][i].numpy()
+            self.fake_env.state = np.array([np.arctan2(o[1], o[0]), o[2]])
+            o2 = self.fake_env._get_obs()
+            obs, r, _, _2 = self.fake_env.step(a[0]*0.5*(self.fake_env.action_space.high-self.fake_env.action_space.low))
+
+            b["o_next"][i] = torch.from_numpy(obs)
+            b["r"][i] = torch.from_numpy(np.array([r]))
+        return b
 
     def update_target_networks(self):
         with torch.no_grad():
@@ -149,7 +184,6 @@ class HDDPGAgent:
             y = b["r"].unsqueeze(-1) + (1 - b["done"].unsqueeze(-1)) * self.par.gamma * self.ac_target.critic(b["o_next"],
                                                                                                 self.ac_target.actor(
                                                                                                     b["o_next"]))
-        # print(torch.mean(y3-y2))
         loss_c = loss_critic(self.ac.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
         loss_c.backward()
         self.optimizer_critic.step()
@@ -165,7 +199,7 @@ class HDDPGAgent:
                 if self.par.use_OU:
                     action = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action = action + torch.randn(action.size()) * 0.1
+                    action = action + torch.randn(action.size()) * 0.3
                 action = torch.clamp(action, -1.0, 1.0)
         return action
 
@@ -178,28 +212,28 @@ class HDDPGAgent:
         # Sample Minibatch
         b = self.buffer.sample_tensors(n=self.par.batch_size)
         with torch.no_grad():
-            action = self.ac_target.actor(b["o"])
+            action = b["a"]#self.ac.actor(b["o"])
             if self.par.use_OU:
                 action_noisy = action + torch.Tensor(self.ou.noise())[0]
             else:
-                action_noisy = action + torch.randn(action.size()) * 0.1
+                action_noisy = action + torch.randn(action.size()) * 0.3
             b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
         new_o, r = model.sample(b["o"], b["a"])
         b["o_next"] = new_o
         b["r"] = r.squeeze()
         return b
 
-    def generate_from_model(self, rollout=1, batches=1, size=32):
+    def generate_from_model(self, rollout=1, batches=10, size=128):
         for batch in range(batches):
             b = self.buffer.sample_tensors(n=size).copy()
             for _ in range(rollout):
                 model = random.choice(self.models)
                 with torch.no_grad():
-                    action = self.ac_target.actor(b["o"])
+                    action = self.ac.actor(b["o"])
                     if self.par.use_OU:
                         action_noisy = action + torch.Tensor(self.ou.noise())[0]
                     else:
-                        action_noisy = action + torch.randn(action.size()) * 0.6
+                        action_noisy = action + torch.randn(action.size()) * 0.3
                     b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
                 new_o, r = model.sample(b["o"], b["a"])
                 for o, a, new_oi, new_ri, done in zip(b["o"], b["a"], new_o, r, b["done"]):
@@ -211,14 +245,20 @@ class HDDPGAgent:
         sigma = o_next_pred[1]
         sigma_2 = r_pred[1]
         mu = o_next_pred[0]
+        #print(torch.max(torch.abs(mu)))
         target = samples["o_next"]
-        loss1 = torch.mean((mu - target) / sigma ** 2 * (mu - target))
-        loss3 = torch.mean(torch.log(torch.prod(sigma ** 2, 1) * torch.prod(sigma_2 ** 2, 1)))
-        mu = r_pred[0]
+        #print(torch.max(sigma))
+        #print(torch.max(sigma_2))
+        loss1 = torch.mean((mu - target) / sigma * (mu - target))
+        # print(mu-target)
+        loss3 = torch.mean(torch.log(torch.prod(sigma, 1))) + torch.mean(torch.log(torch.prod(sigma_2, 1)))
+        mu2 = r_pred[0]
+        #print(torch.max(torch.abs(mu)))
         target = samples["r"].unsqueeze(-1)
-        loss2 = torch.mean((mu - target) / sigma_2 ** 2 * (mu - target))
+        loss2 = torch.mean((mu2 - target) / sigma_2 * (mu2 - target))
+        # print(mu2-target)
+        # print(sigma_2)
         loss = loss1 + loss2 + loss3
-        # print(loss)
         optim.zero_grad()
         loss.backward()
         optim.step()

@@ -26,6 +26,7 @@ class ModelAgentHyperPar:
         self.lr_actor = float(kwargs.get("lr_actor", 0.001))
         self.lr_critic = float(kwargs.get("lr_critic", 0.001))
         self.lr_model = float(kwargs.get("lr_model", 0.0001))
+        self.l2_norm = float(kwargs.get("l2_norm", 0.0))
         self.step_random = int(kwargs.get("step_random", 500))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 50))
         self.update_steps = int(kwargs.get("update_steps", 200))
