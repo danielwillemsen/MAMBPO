@@ -8,9 +8,9 @@ sns.set(style="darkgrid")
 
 data = dict()
 files = []
-for dat in ["./logs/updates2","./logs/batch"]:
+for dat in ["./logs/pendu11"]:
     if data:
-        data = data.update(p.load(open(dat, "rb")))
+        data.update(p.load(open(dat, "rb")))
     else:
         data = p.load(open(dat,"rb"))
 
@@ -21,18 +21,19 @@ for key, dat in data.items():
         run_score = run["scores"]
         run_time = run["times"]
         for ep, perf in enumerate(run_score):
-            frame.loc[len(frame)] = [ep, run_time[ep], perf[0]]
+            frame.loc[len(frame)] = [ep, run_time[ep], np.mean(perf)]
     frames[key] = frame
 
 for name, frame in frames.items():
-    if name == "HDDPGAgent":
-        name = "DDPG"
-    elif name == "ModelAgent":
-        name = "Model-Based TD3"
+    # if "HDDPGAgent" in name:
+    #     name = "DDPG"
+    # elif "Model" in name:
+    #     name = "Model-Based TD3"
+    # else:
+    #     name = "TD3"
     ax = sns.lineplot(x="episode", y="score", data=frame, label=name)
     #ax.set(ylim=(,1)
     #ax.set(yscale="log")
-
 plt.show()
 
 

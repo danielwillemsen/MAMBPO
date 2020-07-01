@@ -26,10 +26,10 @@ class OUNoise:
         return self.state
 
 class ReplayBuffer():
-    def __init__(self):
+    def __init__(self, size=200000):
         self.buffer = []
         self.n_samples = 128
-        self.max_size = 2000000
+        self.max_size = size
 
     def len(self):
         return len(self.buffer)
@@ -66,11 +66,38 @@ class Actor(nn.Module):
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
         for i in range(len(hidden_dims)-1):
             layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
-        layers += [nn.Linear(hidden_dims[-1], output_dim), nn.Sigmoid()]
+        layers += [nn.Linear(hidden_dims[-1], output_dim), nn.Tanh()]
         self.net = nn.Sequential(*layers)
 
     def forward(self, observation):
         return self.net(observation)
+
+class StochActor(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim):
+        super().__init__()
+        layers = []
+        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
+        for i in range(len(hidden_dims)-1):
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
+        #layers += [nn.Linear(hidden_dims[-1], output_dim), nn.Sigmoid()]
+        self.net = nn.Sequential(*layers)
+        self.mu_lay = nn.Linear(hidden_dims[-1], output_dim)
+        self.sigma_lay = nn.Linear(hidden_dims[-1], output_dim)
+
+    def forward(self, observation, sample=True, greedy=False):
+        res = self.net(observation)
+        mu, sigma = self.mu_lay(res), torch.exp(self.sigma_lay(res))
+        pi_dist = torch.distributions.normal.Normal(mu, sigma)
+        act = pi_dist.rsample()
+        if not sample:
+            logp_pi = pi_dist.log_prob(act).sum(axis=-1)
+            logp_pi -= (2 * (np.log(2) - act - F.softplus(-2 * act))).sum(axis=1)
+            return torch.sigmoid(act), logp_pi*2
+        else:
+            if greedy:
+                return torch.sigmoid(mu)
+            else:
+                return torch.sigmoid(act)
 
 
 class Critic(nn.Module):
@@ -113,11 +140,20 @@ class Model(nn.Module):
     def forward(self, observation, action):
         x = torch.cat([observation, action], dim=-1)
         x = self.net(x)
-        return [self.mu_output(x), torch.exp(self.sigma_output(x))], [self.mu_reward(x), torch.exp(self.sigma_reward(x))]
+        s_output = 10.*torch.tanh(self.sigma_output(x))
+        s_reward = 10.*torch.tanh(self.sigma_reward(x))
+        return [self.mu_output(x), torch.exp(s_output)], [self.mu_reward(x), torch.exp(s_reward)]
 
     def sample(self, observation, action):
         with torch.no_grad():
             new_o, r = self.forward(observation, action)
-            new_o = torch.normal(new_o[0], new_o[1])
-            r = torch.normal(r[0], r[1])
+            new_o = torch.normal(new_o[0], torch.sqrt(new_o[1]))
+            r = torch.normal(r[0], 0.*torch.sqrt(r[1]))
         return new_o, r
+
+
+def loss_critic(val, target, f_hyst=1.0):
+    diffs = target - val
+    if not np.isclose(f_hyst, 1.0):
+        diffs[diffs < 0] *= f_hyst
+    return torch.mean(diffs**2)
