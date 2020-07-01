@@ -84,7 +84,7 @@ class HDDPGAgent:
             self.models = []
             self.optimizer_models = []
             for k in range(self.par.n_models):
-                model = Model(obs_dim + action_dim, self.par.hidden_dims_model, obs_dim)
+                model = Model(obs_dim + action_dim, self.par.hidden_dims_model, obs_dim).to(self.device)
                 self.models.append(model)
                 self.optimizer_models.append(torch.optim.Adam(model.parameters(),
                                                               lr=self.par.lr_model, amsgrad=True, weight_decay=self.par.l2_norm))
