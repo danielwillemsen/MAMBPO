@@ -208,7 +208,7 @@ class HDDPGAgent:
                 if self.par.use_OU:
                     action = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action = action + torch.randn(action.size()) * 0.3
+                    action = action + torch.randn(action.size()).to(self.device) * 0.3
                 action = torch.clamp(action, -1.0, 1.0)
         return action
 
