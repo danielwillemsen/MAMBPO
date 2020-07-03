@@ -43,8 +43,8 @@ class HDDPGAgent:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
         if torch.cuda.is_available():
-            print("Using CUDA")
-            self.device = torch.device("cuda")
+            print("Using not CUDA")
+            self.device = torch.device("cpu")
         else:
             print("No CUDA found")
             self.device = torch.device("cpu")
