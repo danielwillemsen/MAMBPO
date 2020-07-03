@@ -127,6 +127,21 @@ if __name__ == '__main__':
         logfile = "./logs/lunar"
         #
         agent_fn = HDDPGAgent
+        agent_kwargs = {"n_steps": 2}
+        name = agent_fn.__name__+ str(agent_kwargs)
+        print(name)
+        env.env.seed(seed=run)
+        if name not in logdata:
+            logdata[name] = []
+        obs_n = env.reset()
+        agents = []
+        for i in range(env.n_agents):
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        logdata[name].append(train(env, agents, n_episodes=500))
+        p.dump(logdata, open(logfile, "wb"))
+        env.close()
+
+        agent_fn = HDDPGAgent
         agent_kwargs = {"n_steps": 5}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
@@ -137,22 +152,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open(logfile, "wb"))
-        env.close()
-
-        agent_fn = HDDPGAgent
-        agent_kwargs = {"n_steps": 10}
-        name = agent_fn.__name__+ str(agent_kwargs)
-        print(name)
-        env.env.seed(seed=run)
-        if name not in logdata:
-            logdata[name] = []
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
+        logdata[name].append(train(env, agents, n_episodes=500))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -174,6 +174,23 @@ if __name__ == '__main__':
         # env.close()
         agent_fn = HDDPGAgent
 
+        agent_kwargs = {"use_model": True, "n_steps": 5}
+        name = agent_fn.__name__+ str(agent_kwargs)
+        print(name)
+        env.env.seed(seed=run)
+
+        if name not in logdata:
+            logdata[name] = []
+        obs_n = env.reset()
+        agents = []
+        for i in range(env.n_agents):
+            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        logdata[name].append(train(env, agents, n_episodes=500))
+        p.dump(logdata, open(logfile, "wb"))
+        env.close()
+
+        agent_fn = HDDPGAgent
+
         agent_kwargs = {"use_model": True, "n_steps": 10}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
@@ -185,24 +202,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
-        p.dump(logdata, open(logfile, "wb"))
-        env.close()
-
-        agent_fn = HDDPGAgent
-
-        agent_kwargs = {"use_model": True, "n_steps": 20}
-        name = agent_fn.__name__+ str(agent_kwargs)
-        print(name)
-        env.env.seed(seed=run)
-
-        if name not in logdata:
-            logdata[name] = []
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
+        logdata[name].append(train(env, agents, n_episodes=500))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
         # agent_fn = TD3
