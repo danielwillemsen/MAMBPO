@@ -3,6 +3,7 @@ import time
 import os,sys
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
+sys.path.insert(1, os.path.join(sys.path[0], '../'))
 
 import argparse
 import numpy as np
@@ -79,7 +80,7 @@ if __name__ == '__main__':
     env = EnvWrapper("gym", "Pendulum-v0")
 
     # execution loop
-    n_runs = 10
+    n_runs = 1
     logdata = dict()
 
     for run in range(n_runs):
@@ -127,7 +128,7 @@ if __name__ == '__main__':
         logfile = "./logs/pend5"
         #
         agent_fn = HDDPGAgent
-        agent_kwargs = {"n_steps": 40}
+        agent_kwargs = {"n_steps": 5}
         name = agent_fn.__name__+ str(agent_kwargs)
         print(name)
         env.env.seed(seed=run)
@@ -137,7 +138,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=10))
+        logdata[name].append(train(env, agents, n_episodes=5))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -156,20 +157,20 @@ if __name__ == '__main__':
         # p.dump(logdata, open(logfile, "wb"))
         # env.close()
 
-        agent_fn = HDDPGAgent
-        agent_kwargs = {"use_model": True, "use_real_model": True, "n_steps": 40}
-        name = agent_fn.__name__+ str(agent_kwargs)
-        print(name)
-        env.env.seed(seed=run)
-        if name not in logdata:
-            logdata[name] = []
-        obs_n = env.reset()
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=10))
-        p.dump(logdata, open(logfile, "wb"))
-        env.close()
+        # agent_fn = HDDPGAgent
+        # agent_kwargs = {"use_model": True, "use_real_model": True, "n_steps": 40}
+        # name = agent_fn.__name__+ str(agent_kwargs)
+        # print(name)
+        # env.env.seed(seed=run)
+        # if name not in logdata:
+        #     logdata[name] = []
+        # obs_n = env.reset()
+        # agents = []
+        # for i in range(env.n_agents):
+        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+        # logdata[name].append(train(env, agents, n_episodes=10))
+        # p.dump(logdata, open(logfile, "wb"))
+        # env.close()
         #
         # agent_fn = HDDPGAgent
         # agent_kwargs = {"use_model": True, "n_steps": 20}

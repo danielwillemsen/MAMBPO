@@ -30,7 +30,7 @@ class HDDPGHyperPar:
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_steps = int(kwargs.get("update_steps", 1))
         self.n_models = int(kwargs.get("n_models", 10))
-        self.batch_size = int(kwargs.get("batch_size", 128))
+        self.batch_size = int(kwargs.get("batch_size", 512))
         self.action_noise = float(kwargs.get("action_noise", 0.3))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0))
         self.use_model = bool(kwargs.get("use_model", False))
@@ -44,7 +44,8 @@ class HDDPGAgent:
         # Initialize arguments
         if torch.cuda.is_available():
             print("Using not CUDA")
-            self.device = torch.device("cpu")
+            self.device = torch.device("cuda:1")
+            #self.device = torch.device("cpu")
         else:
             print("No CUDA found")
             self.device = torch.device("cpu")
@@ -107,7 +108,7 @@ class HDDPGAgent:
         if self.o_old is not None:
             self.buffer.add((self.o_old, self.a_old, r, o, done))
 
-        if self.buffer.len() > self.buffer.n_samples:
+        if self.buffer.len() > self.par.batch_size:
             for i in range(10):
                 if self.par.use_model and not self.par.use_real_model:
                     self.update_models()
@@ -203,7 +204,7 @@ class HDDPGAgent:
     def select_action(self, o, method):
         assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
         if method == "random":
-            return torch.rand(self.action_dim)
+            return torch.rand(self.action_dim).to(self.device)
 
         with torch.no_grad():
             action = self.ac.actor(o.unsqueeze(0)).squeeze()
