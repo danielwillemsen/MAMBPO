@@ -8,7 +8,7 @@ sns.set(style="darkgrid")
 
 data = dict()
 files = []
-for dat in ["./logs/lunar"]:
+for dat in ["./logs/pend4"]:
     if data:
         data.update(p.load(open(dat, "rb")))
     else:

@@ -22,14 +22,14 @@ class HDDPGHyperPar:
         self.gamma = float(kwargs.get("gamma", 0.99))
         self.tau = float(kwargs.get("tau", 0.005))
         self.delay = int(kwargs.get("delay", 2))
-        self.lr_actor = float(kwargs.get("lr_actor", 0.0001))
-        self.lr_critic = float(kwargs.get("lr_critic", 0.0001))
+        self.lr_actor = float(kwargs.get("lr_actor", 0.005))
+        self.lr_critic = float(kwargs.get("lr_critic", 0.005))
         self.lr_model = float(kwargs.get("lr_model", 0.0001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
-        self.step_random = int(kwargs.get("step_random", 250))
+        self.step_random = int(kwargs.get("step_random", 400))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_steps = int(kwargs.get("update_steps", 1))
-        self.n_models = int(kwargs.get("n_models", 5))
+        self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
         self.action_noise = float(kwargs.get("action_noise", 0.3))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0))
@@ -108,7 +108,7 @@ class HDDPGAgent:
             self.buffer.add((self.o_old, self.a_old, r, o, done))
 
         if self.buffer.len() > self.buffer.n_samples:
-            for i in range(5):
+            for i in range(10):
                 if self.par.use_model and not self.par.use_real_model:
                     self.update_models()
 
@@ -119,7 +119,10 @@ class HDDPGAgent:
                     self.update_step()
 
         # Select Action
-        action = self.select_action(o, "noisy")
+        if self.i_step > self.par.step_random:
+            action = self.select_action(o, "noisy")
+        else:
+            action = self.select_action(o, "random")
 
         self.o_old = o
 
@@ -157,7 +160,7 @@ class HDDPGAgent:
             if self.par.use_OU:
                 action_noisy = action + torch.Tensor(self.ou.noise())[0]
             else:
-                action_noisy = action + torch.randn(action.size()).to(self.device) * 0.3
+                action_noisy = action + torch.randn(action.size()).to(self.device) * 0.1
             b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
         for i in range(len(b["a"])):
             a = b["a"][i].cpu().numpy()
@@ -168,8 +171,8 @@ class HDDPGAgent:
             o2 = self.fake_env._get_obs()
             obs, r, _, _2 = self.fake_env.step(a[0]*0.5*(self.fake_env.action_space.high-self.fake_env.action_space.low))
 
-            b["o_next"][i] = torch.from_numpy(obs).to("self.device")
-            b["r"][i] = torch.from_numpy(np.array([r])).to("self.device")
+            b["o_next"][i] = torch.from_numpy(obs).to(self.device)
+            b["r"][i] = torch.from_numpy(np.array([r])).to(self.device)
         return b
 
     def update_target_networks(self):
