@@ -77,7 +77,7 @@ if __name__ == '__main__':
     agent_dict = {"HDDPGAgent": HDDPGAgent, "TD3": TD3, "ModelAgent": ModelAgent}
 
     # Create environment
-    env = EnvWrapper("gym", "Pendulum-v0")
+    env = EnvWrapper("gym", "LunarLanderContinuous-v2")
 
     # execution loop
     n_runs = 1
@@ -138,7 +138,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=5))
+        logdata[name].append(train(env, agents, n_episodes=10))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 

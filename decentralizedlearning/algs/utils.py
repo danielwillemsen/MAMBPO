@@ -48,7 +48,8 @@ class ReplayBuffer():
     def sample_tensors(self, n=128):
         samples = random.sample(self.buffer, k=n)
         data = [*zip(*samples)]
-        data_dict = {"o": torch.stack(data[0]), "a": torch.stack(data[1]), "r": torch.stack(data[2]), "o_next": torch.stack(data[3]), "done": torch.stack(data[4])}
+        #data_dict = {"o": torch.stack(data[0]), "a": torch.stack(data[1]), "r": torch.stack(data[2]), "o_next": torch.stack(data[3]), "done": torch.stack(data[4])}
+        data_dict = {"o": torch.cat(data[0]).view(n,-1), "a":torch.cat(data[1]).view(n, -1), "r": torch.stack(data[2]), "o_next": torch.cat(data[3]).view(n, -1), "done": torch.stack(data[4])}
         return data_dict
 
 

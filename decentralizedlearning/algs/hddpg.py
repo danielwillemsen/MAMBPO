@@ -13,9 +13,9 @@ from decentralizedlearning.algs.utils import Model
 class HDDPGHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (128, 128)))
+                                             (256, 256)))
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (128, 128)))
+                                              (256, 256)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
                                              (128, 128, 128)))
         self.use_OU = bool(kwargs.get("use_OU", False))
@@ -30,7 +30,7 @@ class HDDPGHyperPar:
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_steps = int(kwargs.get("update_steps", 1))
         self.n_models = int(kwargs.get("n_models", 10))
-        self.batch_size = int(kwargs.get("batch_size", 512))
+        self.batch_size = int(kwargs.get("batch_size", 128))
         self.action_noise = float(kwargs.get("action_noise", 0.3))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0))
         self.use_model = bool(kwargs.get("use_model", False))
@@ -43,8 +43,8 @@ class HDDPGAgent:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
         if torch.cuda.is_available():
-            print("Using not CUDA")
-            self.device = torch.device("cuda:1")
+            print("Using CUDA")
+            self.device = torch.device("cuda:0")
             #self.device = torch.device("cpu")
         else:
             print("No CUDA found")
@@ -98,9 +98,9 @@ class HDDPGAgent:
             self.ou.reset()
 
     def step(self, o, r, eval=False, done=False):
-        o = torch.Tensor(o).to(self.device)
-        r = torch.Tensor(np.array(float(r))).to(self.device)
-        done = torch.Tensor(np.array(float(done))).to(self.device)
+        o = torch.tensor(o, dtype=torch.float, device=self.device)
+        r = torch.tensor(np.array(float(r)), dtype=torch.float, device=self.device)
+        done = torch.tensor(np.array(float(done)), dtype=torch.float, device=self.device)
         if eval:
             action = self.ac.actor(o.unsqueeze(0)).squeeze()
             action = torch.clamp(action, -1., 1.0)
@@ -204,7 +204,7 @@ class HDDPGAgent:
     def select_action(self, o, method):
         assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
         if method == "random":
-            return torch.rand(self.action_dim).to(self.device)
+            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)
 
         with torch.no_grad():
             action = self.ac.actor(o.unsqueeze(0)).squeeze()
@@ -212,7 +212,7 @@ class HDDPGAgent:
                 if self.par.use_OU:
                     action = action + torch.Tensor(self.ou.noise())[0]
                 else:
-                    action = action + torch.randn(action.size()).to(self.device) * 0.3
+                    action = action + torch.randn(action.size(), dtype=torch.float, device=self.device) * 0.3
                 action = torch.clamp(action, -1.0, 1.0)
         return action
 
