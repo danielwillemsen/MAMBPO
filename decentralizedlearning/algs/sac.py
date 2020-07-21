@@ -25,13 +25,13 @@ class SACHyperPar:
         self.lr_actor = float(kwargs.get("lr_actor", 0.001))
         self.lr_critic = float(kwargs.get("lr_critic", 0.001))
         self.lr_model = float(kwargs.get("lr_model", 0.001))
-        self.step_random = int(kwargs.get("step_random", 0))
-        self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
-        self.update_steps = int(kwargs.get("update_steps", 1))
+        self.step_random = int(kwargs.get("step_random", 500))
+        self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 5))
+        self.update_steps = int(kwargs.get("n_steps", 5))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0000))
-        self.alpha = float(kwargs.get("alpha",0.01))
+        self.alpha = float(kwargs.get("alpha",0.2))
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
 
 class SAC:
@@ -98,7 +98,7 @@ class SAC:
             self.buffer.add((self.o_old, self.a_old, r, o, done))
 
         if self.step_i % self.par.update_every_n_steps == 0:
-            for step in range(self.par.update_steps):
+            for step in range(self.par.update_steps*self.par.update_every_n_steps):
                 if self.buffer.len() > self.par.batch_size:
                     # Train actor and critic
                     b = self.buffer.sample_tensors(n=self.par.batch_size)
@@ -130,7 +130,7 @@ class SAC:
     def select_action(self, o, method):
         assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
         if method == "random":
-            return torch.rand(self.action_dim)
+            return torch.rand(self.action_dim)*2. - 1.
 
         with torch.no_grad():
             if method == "greedy":

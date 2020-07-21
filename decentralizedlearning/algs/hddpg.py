@@ -13,9 +13,9 @@ from decentralizedlearning.algs.utils import Model
 class HDDPGHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (128, 128)))
+                                             (256, 256)))
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (128, 128)))
+                                              (256, 256)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
                                              (128, 128, 128)))
         self.use_OU = bool(kwargs.get("use_OU", False))
@@ -26,8 +26,8 @@ class HDDPGHyperPar:
         self.lr_critic = float(kwargs.get("lr_critic", 0.0001))
         self.lr_model = float(kwargs.get("lr_model", 0.0001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
-        self.step_random = int(kwargs.get("step_random", 250))
-        self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
+        self.step_random = int(kwargs.get("step_random", 500))
+        self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 5))
         self.update_steps = int(kwargs.get("update_steps", 1))
         self.n_models = int(kwargs.get("n_models", 5))
         self.batch_size = int(kwargs.get("batch_size", 128))

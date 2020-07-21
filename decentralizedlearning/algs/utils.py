@@ -86,18 +86,19 @@ class StochActor(nn.Module):
 
     def forward(self, observation, sample=True, greedy=False):
         res = self.net(observation)
-        mu, sigma = self.mu_lay(res), torch.exp(self.sigma_lay(res))
+        mu, sigma = self.mu_lay(res), torch.exp(torch.clamp(self.sigma_lay(res), -20, 2))
         pi_dist = torch.distributions.normal.Normal(mu, sigma)
-        act = pi_dist.rsample()
+        if greedy:
+            act = mu
+        else:
+            act = pi_dist.rsample()
+
         if not sample:
             logp_pi = pi_dist.log_prob(act).sum(axis=-1)
             logp_pi -= (2 * (np.log(2) - act - F.softplus(-2 * act))).sum(axis=1)
-            return torch.sigmoid(act), logp_pi*2
+            return torch.tanh(act), logp_pi
         else:
-            if greedy:
-                return torch.sigmoid(mu)
-            else:
-                return torch.sigmoid(act)
+            return torch.tanh(act)
 
 
 class Critic(nn.Module):
