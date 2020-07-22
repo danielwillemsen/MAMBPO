@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 def scale_action(env, agent_id, action):
     return (env.action_space[agent_id].high-env.action_space[agent_id].low)*action*0.5
 
-def run_episode(env, agents, eval=False,render=False, steps=250):
+def run_episode(env, agents, eval=False,render=False, steps=1000):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     env = EnvWrapper("gym", "Pendulum-v0")
 
     # execution loop
-    n_runs = 10
+    n_runs = 5
     logdata = dict()
 
     for run in range(n_runs):
@@ -126,7 +126,7 @@ if __name__ == '__main__':
         # logdata[name].append(train(env, agents, n_episodes=10))
         # p.dump(logdata, open("./logs/pendu4", "wb"))
         # env.close()
-        logfile = "./logs/lunar"
+        logfile = "./logs/servertest3"
         #
         agent_fn = SAC
         agent_kwargs = {"n_steps": 1}
@@ -139,7 +139,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
+        logdata[name].append(train(env, agents, n_episodes=500))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -154,7 +154,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
+        logdata[name].append(train(env, agents, n_episodes=500))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -169,7 +169,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
+        logdata[name].append(train(env, agents, n_episodes=500))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -184,7 +184,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=50))
+        logdata[name].append(train(env, agents, n_episodes=500))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -199,7 +199,7 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=20))
+        logdata[name].append(train(env, agents, n_episodes=200))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
 
@@ -214,51 +214,6 @@ if __name__ == '__main__':
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        logdata[name].append(train(env, agents, n_episodes=20))
+        logdata[name].append(train(env, agents, n_episodes=200))
         p.dump(logdata, open(logfile, "wb"))
         env.close()
-        # agent_fn = TD3
-        # agent_kwargs = {"update_every_n_steps": 1, "update_steps": 2}
-        # name = agent_fn.__name__+ str(agent_kwargs)
-        # print(name)
-        # if name not in logdata:
-        #     logdata[name] = []
-        # obs_n = env.reset()
-        # agents = []
-        # for i in range(env.n_agents):
-        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-        # logdata[name].append(train(env, agents, n_episodes=50))
-        # p.dump(logdata, open("./logs/pendu4", "wb"))
-        # env.close()
-        # name = "f_hyst=0.5"
-        # obs_n = env.reset()
-        # agents = []
-        # for i in range(env.n_agents):
-        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
-        # for agent in agents:
-        #     agent.f_hyst = 0.5
-        # logdata[name].append(train(env,agents))
-        # p.dump(logdata, open("./logs/exp_mult6","wb"))
-        #
-        # name = "f_hyst=0.25"
-        # obs_n = env.reset()
-        # agents = []
-        # for i in range(env.n_agents):
-        #     agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0]))
-        # for agent in agents:
-        #     agent.f_hyst = 0.25
-        # logdata[name].append(train(env,agents))
-        # p.dump(logdata, open("./logs/exp_mult6","wb"))
-
-    # name = "f_hyst=0.5"
-    # run_data = []
-    # for run in range(n_runs):
-    #     obs_n = env.reset()
-    #     agents = [agent_fn(len(obs_n[0]), 8), HDDPGAgent(len(obs_n[0]), 8)]  # , HDDPGAgent(len(obs_n[0]),8)]#, HDDPGAgent(len(obs_n[0]),8), HDDPGAgent(len(obs_n[0]),8)]
-    #     agents[0].f_hyst = 0.5
-    #     run_data.append(train(env,agents))
-    #
-    # for data in run_data:
-    #     plt.plot(data)
-    # plt.show()
-    # logdata[name] = run_data

@@ -26,7 +26,7 @@ class OUNoise:
         return self.state
 
 class ReplayBuffer():
-    def __init__(self, size=10000):
+    def __init__(self, size=1000000):
         self.buffer = []
         self.n_samples = 128
         self.max_size = size
@@ -95,8 +95,8 @@ class StochActor(nn.Module):
             act = pi_dist.rsample()
 
         if not sample:
-            logp_pi = pi_dist.log_prob(act).sum(axis=-1)
-            logp_pi -= (2 * (np.log(2) - act - F.softplus(-2 * act))).sum(axis=1)
+            logp_pi = pi_dist.log_prob(act).sum(dim=-1)
+            logp_pi -= (2 * (np.log(2) - act - F.softplus(-2 * act))).sum(dim=1)
             return torch.tanh(act), logp_pi
         else:
             return torch.tanh(act)
@@ -159,3 +159,23 @@ def loss_critic(val, target, f_hyst=1.0):
     if not np.isclose(f_hyst, 1.0):
         diffs[diffs < 0] *= f_hyst
     return torch.mean(diffs**2)
+
+def check_cuda():
+    if torch.cuda.is_available():
+        print("Using CUDA")
+        return torch.device("cuda:0")
+    else:
+        print("No CUDA found")
+        return torch.device("cpu")
+
+def convert_inputs_to_tensors(o, r, done, device):
+    o = torch.tensor(o, dtype=torch.float, device=device)
+    r = torch.tensor(np.array(float(r)), dtype=torch.float, device=device)
+    done = torch.tensor(np.array(float(done)), dtype=torch.float, device=device)
+    return o, r, done
+
+def update_target_networks(networks, targets, tau):
+    with torch.no_grad():
+        for network, target in zip(networks, targets):
+            for par, par_target in zip(network.parameters(), target.parameters()):
+                par_target.data.copy_((1 - tau) * par_target + tau * par.data)

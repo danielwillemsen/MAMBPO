@@ -9,6 +9,7 @@ from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import StochActor
 from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import loss_critic
+from decentralizedlearning.algs.utils import update_target_networks
 
 class SACHyperPar:
     def __init__(self, **kwargs):
@@ -37,6 +38,14 @@ class SACHyperPar:
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
+        if torch.cuda.is_available():
+            print("Using CUDA")
+            self.device = torch.device("cuda:0")
+            #self.device = torch.device("cpu")
+        else:
+            print("No CUDA found")
+            self.device = torch.device("cpu")
+        # Initialize arguments
         if hyperpar:
             self.par = hyperpar
         else:
@@ -46,6 +55,9 @@ class SAC:
         # Initialize actor
         self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim)
         self.actor_target = copy.deepcopy(self.actor)
+        self.actor.to(self.device)
+        self.actor_target.to(self.device)
+
         self.optimizer_actor = torch.optim.Adam(self.actor.parameters(),
                                                 lr=self.par.lr_actor,
                                                 weight_decay=self.par.weight_decay)
@@ -59,6 +71,7 @@ class SAC:
         self.optimizer_critics = []
         for k in range(2):
             critic = Critic(obs_dim + action_dim, self.par.hidden_dims_critic)
+            critic.to(self.device)
             self.critics.append(critic)
             self.critics_target.append(copy.deepcopy(critic))
             self.optimizer_critics.append(torch.optim.Adam(critic.parameters(),
@@ -84,9 +97,9 @@ class SAC:
             self.ou.reset()
 
     def step(self, o, r, eval=False, done=False):
-        o = torch.Tensor(o)
-        r = torch.Tensor(np.array(float(r)))
-        done = torch.Tensor(np.array(float(done)))
+        o = torch.tensor(o, dtype=torch.float, device=self.device)
+        r = torch.tensor(np.array(float(r)), dtype=torch.float, device=self.device)
+        done = torch.tensor(np.array(float(done)), dtype=torch.float, device=self.device)
 
         if eval:
             # Select greedy action and return
@@ -111,7 +124,9 @@ class SAC:
                         self.update_actor(b)
 
                         # Update Target Networks
-                        self.update_target_networks()
+                        update_target_networks([self.actor] + self.critics,
+                                               [self.actor_target] + self.critics_target,
+                                               self.par.tau)
 
         # Select Action
         if self.step_i > self.par.step_random:
@@ -125,12 +140,12 @@ class SAC:
         else:
             self.a_old = action
         self.step_i += 1
-        return action.detach().numpy()
+        return action.detach().cpu().numpy()
 
     def select_action(self, o, method):
         assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
         if method == "random":
-            return torch.rand(self.action_dim)*2. - 1.
+            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
 
         with torch.no_grad():
             if method == "greedy":
@@ -138,16 +153,6 @@ class SAC:
             else:
                 action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
             return action
-
-    def update_target_networks(self):
-        with torch.no_grad():
-            for par, par_target in zip(self.actor.parameters(), self.actor_target.parameters()):
-                par_target.data.copy_(
-                    (1 - self.par.tau) * par_target + self.par.tau * par.data)
-            for k in range(2):
-                for par, par_target in zip(self.critics[k].parameters(), self.critics_target[k].parameters()):
-                    par_target.data.copy_(
-                        (1 - self.par.tau) * par_target + self.par.tau * par.data)
 
     def update_actor(self, b):
         for par in self.critics[0].parameters():
@@ -170,9 +175,6 @@ class SAC:
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
 
-            if (np.random.random() < 0.01):
-                print("Loss:", loss)
-                print("Mean Q:", torch.mean(y))
             # print(time.time() - self.time)
             self.time = time.time()
             optimizer.zero_grad()
