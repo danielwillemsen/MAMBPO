@@ -8,7 +8,7 @@ from decentralizedlearning.algs.utils import ReplayBuffer
 from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import Actor
 from decentralizedlearning.algs.utils import OUNoise
-from decentralizedlearning.algs.utils import Model
+from decentralizedlearning.algs.models import Model
 from decentralizedlearning.algs.utils import loss_critic
 
 class ModelAgentHyperPar:

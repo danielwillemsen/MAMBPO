@@ -8,7 +8,7 @@ sns.set(style="darkgrid")
 
 data = dict()
 files = []
-for dat in ["./logs/servertest3"]:
+for dat in ["../logs/mb_bigtest_cheetah3"]:
     if data:
         data.update(p.load(open(dat, "rb")))
     else:
@@ -16,12 +16,13 @@ for dat in ["./logs/servertest3"]:
 
 frames = dict()
 for key, dat in data.items():
-    frame = pd.DataFrame(columns=["episode", "time", "score"])
+    frame = pd.DataFrame(columns=["episode", "time", "steps", "score"])
     for run in dat:
         run_score = run["scores"]
+        run_step = run["steps"]
         run_time = run["times"]
         for ep, perf in enumerate(run_score):
-            frame.loc[len(frame)] = [ep, run_time[ep], np.mean(perf)]
+            frame.loc[len(frame)] = [ep, run_time[ep], run_step[ep], np.mean(perf)]
     frames[key] = frame
 
 for name, frame in frames.items():

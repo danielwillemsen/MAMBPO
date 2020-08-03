@@ -34,6 +34,9 @@ class ReplayBuffer():
     def len(self):
         return len(self.buffer)
 
+    def __len__(self):
+        return len(self.buffer)
+
     def add(self, sample):
         self.buffer.append(sample)
         if len(self.buffer) > self.max_size:
@@ -115,43 +118,6 @@ class Critic(nn.Module):
     def forward(self, observation, action):
         x = torch.cat([observation, action], dim=-1)
         return self.net(x)
-
-
-class Model(nn.Module):
-    """Model.
-    Contains a probabilistic world model. Outputs 2 lists: one containing mu, sigma of reward, second containing mu, sigma of observation
-    """
-    def __init__(self, input_dim, hidden_dims, obs_dim):
-        """__init__.
-
-        :param input_dim:
-        :param hidden_dims:
-        :param output_dim:
-        """
-        super().__init__()
-        layers = []
-        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
-        for i in range(len(hidden_dims) - 1):
-            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
-        self.net = nn.Sequential(*layers)
-        self.mu_output = nn.Linear(hidden_dims[-1], obs_dim)
-        self.sigma_output = nn.Linear(hidden_dims[-1], obs_dim)
-        self.mu_reward = nn.Linear(hidden_dims[-1], 1)
-        self.sigma_reward = nn.Linear(hidden_dims[-1], 1)
-
-    def forward(self, observation, action):
-        x = torch.cat([observation, action], dim=-1)
-        x = self.net(x)
-        s_output = 10.*torch.tanh(self.sigma_output(x))
-        s_reward = 10.*torch.tanh(self.sigma_reward(x))
-        return [self.mu_output(x), torch.exp(s_output)], [self.mu_reward(x), torch.exp(s_reward)]
-
-    def sample(self, observation, action):
-        with torch.no_grad():
-            new_o, r = self.forward(observation, action)
-            new_o = torch.normal(new_o[0], torch.sqrt(new_o[1]))
-            r = torch.normal(r[0], 0.*torch.sqrt(r[1]))
-        return new_o, r
 
 
 def loss_critic(val, target, f_hyst=1.0):

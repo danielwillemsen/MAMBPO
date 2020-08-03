@@ -10,6 +10,8 @@ from decentralizedlearning.algs.utils import StochActor
 from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
+from decentralizedlearning.algs.utils import convert_inputs_to_tensors
+from decentralizedlearning.algs.models import EnsembleModel
 
 class SACHyperPar:
     def __init__(self, **kwargs):
@@ -18,22 +20,28 @@ class SACHyperPar:
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
                                               (256, 256)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
-                                             (256, 256)))
+                                             (200, 200, 200, 200)))
         self.use_OU = bool(kwargs.get("use_OU", False))
         self.gamma = float(kwargs.get("gamma", 0.99))
         self.tau = float(kwargs.get("tau", 0.005))
         self.delay = int(kwargs.get("delay", 2))
         self.lr_actor = float(kwargs.get("lr_actor", 0.001))
         self.lr_critic = float(kwargs.get("lr_critic", 0.001))
-        self.lr_model = float(kwargs.get("lr_model", 0.001))
+        self.lr_model = float(kwargs.get("lr_model", 0.00025))
+        self.l2_norm = float(kwargs.get("l2_norm", 0.0))
+
         self.step_random = int(kwargs.get("step_random", 500))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 5))
         self.update_steps = int(kwargs.get("n_steps", 5))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 128))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0000))
-        self.alpha = float(kwargs.get("alpha",0.2))
+        self.alpha = float(kwargs.get("alpha",0.05))
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
+        self.use_model = bool(kwargs.get("use_model", False))
+        self.monitor_losses = bool(kwargs.get("monitor_losses", True))
+        self.use_model_stochastic = bool(kwargs.get("use_model_stochastic", False))
+        self.diverse = bool(kwargs.get("diverse", True))
 
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
@@ -46,6 +54,8 @@ class SAC:
             print("No CUDA found")
             self.device = torch.device("cpu")
         # Initialize arguments
+        self.use_min = kwargs.get("use_min", True)
+        self.use_correct = kwargs.get("use_correct", True)
         if hyperpar:
             self.par = hyperpar
         else:
@@ -65,6 +75,15 @@ class SAC:
         for par in self.actor_target.parameters():
             par.requires_grad = False
 
+        if self.par.use_model:
+            self.model = EnsembleModel(obs_dim + action_dim,
+                                       self.par.hidden_dims_model,
+                                       obs_dim,
+                                       self.par.n_models,
+                                       monitor_losses=self.par.monitor_losses,
+                                       use_stochastic=self.par.use_model_stochastic).to(self.device)
+            self.optimizer_model = torch.optim.Adam(self.model.parameters(),
+                                                              lr=self.par.lr_model, amsgrad=True, weight_decay=self.par.l2_norm)
         # Initialize 2 critics
         self.critics = []
         self.critics_target = []
@@ -84,9 +103,19 @@ class SAC:
         if self.par.use_OU:
             self.ou = OUNoise(action_dim)
 
-        self.buffer = ReplayBuffer()
+        self.real_buffer = ReplayBuffer()
+        if self.par.monitor_losses:
+            self.val_buffer = ReplayBuffer()
+        if self.par.use_model:
+            self.fake_buffer = ReplayBuffer(size=20000)
+            self.ac_buffer = self.fake_buffer
+        else:
+            self.ac_buffer = self.real_buffer
+
         self.o_old = None
         self.a_old = None
+
+
 
         self.step_i = 0
 
@@ -96,25 +125,49 @@ class SAC:
         if self.par.use_OU:
             self.ou.reset()
 
-    def step(self, o, r, eval=False, done=False):
-        o = torch.tensor(o, dtype=torch.float, device=self.device)
-        r = torch.tensor(np.array(float(r)), dtype=torch.float, device=self.device)
-        done = torch.tensor(np.array(float(done)), dtype=torch.float, device=self.device)
+    def step(self, o, r, eval=False, done=False, generate_val_data=False):
+        o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
 
         if eval:
             # Select greedy action and return
             action = self.select_action(o, "greedy")
-            return action.detach().numpy()
+            return action.detach().cpu().numpy()
+
+        if generate_val_data:
+            # Select greedy action and return
+            action = self.select_action(o, "noisy")
+            if self.o_old is not None:
+                self.val_buffer.add((self.o_old, self.a_old, r, o, done))
+            self.o_old = o
+            if action.size() == torch.Size([]):
+                self.a_old = action.unsqueeze(0)
+            else:
+                self.a_old = action
+            return action.detach().cpu().numpy()
 
         # Do training process step
         if self.o_old is not None:
-            self.buffer.add((self.o_old, self.a_old, r, o, done))
+            self.real_buffer.add((self.o_old, self.a_old, r, o, done))
 
         if self.step_i % self.par.update_every_n_steps == 0:
+            #Update model and generate new samples:
+            if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
+                for i in range(5):
+                    self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
+                #self.model.generate_batch(self.real_buffer.sample_tensors())
+                if self.par.monitor_losses and self.step_i % (self.par.update_every_n_steps*100) == 0:
+                    self.model.log_loss(self.real_buffer.sample_tensors(), "train")
+                    self.model.log_loss(self.val_buffer.sample_tensors(), "test")
+                    print(len(self.fake_buffer))
+                for i in range(5):
+                    fake_samples = self.model.generate(self.real_buffer.sample_tensors(), self.actor, diverse=self.par.diverse)
+                    for item in fake_samples:
+                        self.fake_buffer.add(item)
+
             for step in range(self.par.update_steps*self.par.update_every_n_steps):
-                if self.buffer.len() > self.par.batch_size:
+                if self.ac_buffer.len() > self.par.batch_size:
                     # Train actor and critic
-                    b = self.buffer.sample_tensors(n=self.par.batch_size)
+                    b = self.ac_buffer.sample_tensors(n=self.par.batch_size)
 
                     # Update Critic
                     self.update_critics(b)
@@ -158,9 +211,18 @@ class SAC:
         for par in self.critics[0].parameters():
             par.requires_grad = False
         self.optimizer_actor.zero_grad()
-        act, logp_pi = self.actor(b["o_next"], sample=False)
-        loss_actor = - \
-            torch.mean(self.critics[0](b["o"], act) - logp_pi * self.par.alpha)
+        if self.use_correct:
+            act, logp_pi = self.actor(b["o"], sample=False)
+        else:
+            act, logp_pi = self.actor(b["o_next"], sample=False)
+
+        q1 = self.critics[0](b["o"], act).squeeze()
+        q2 = self.critics[1](b["o"], act).squeeze()
+        if self.use_min:
+            q_min = torch.min(q1, q2)
+        else:
+            q_min = q1
+        loss_actor = - torch.mean(q_min - logp_pi * self.par.alpha)
         loss_actor.backward()
         self.optimizer_actor.step()
         for par in self.critics[0].parameters():
@@ -175,11 +237,66 @@ class SAC:
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
 
-            # print(time.time() - self.time)
-            self.time = time.time()
             optimizer.zero_grad()
             loss.backward()
-            # print(time.time() - self.time)
-            self.time = time.time()
-            # print("Loss")
             optimizer.step()
+
+    def update_models(self):
+        samples = self.buffer.sample_tensors(n=self.par.batch_size)
+        for optim, model in zip(self.optimizer_models, self.models):
+            self.model_step(model, optim, samples)
+
+    def sample_from_model(self, model):
+        # Sample Minibatch
+        b = self.buffer.sample_tensors(n=self.par.batch_size)
+        with torch.no_grad():
+            action = b["a"]#self.ac.actor(b["o"])
+            if self.par.use_OU:
+                action_noisy = action + torch.Tensor(self.ou.noise())[0]
+            else:
+                action_noisy = action + torch.randn(action.size()).to(self.device) * 0.3
+            b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
+        new_o, r = model.sample(b["o"], b["a"])
+        b["o_next"] = new_o
+        b["r"] = r.squeeze()
+        return b
+
+    def generate_from_model(self, rollout=1, batches=10, size=128):
+        for batch in range(batches):
+            b = self.buffer.sample_tensors(n=size).copy()
+            for _ in range(rollout):
+                model = random.choice(self.models)
+                with torch.no_grad():
+                    action = self.ac.actor(b["o"])
+                    if self.par.use_OU:
+                        action_noisy = action + torch.Tensor(self.ou.noise())[0]
+                    else:
+                        action_noisy = action + torch.randn(action.size()) * 0.3
+                    b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
+                new_o, r = model.sample(b["o"], b["a"])
+                for o, a, new_oi, new_ri, done in zip(b["o"], b["a"], new_o, r, b["done"]):
+                    self.tempbuf.add((o, a, new_ri, new_oi, done))
+                b = {"o": new_o, "done": b["done"]}
+
+    def model_step(self, model, optim, samples):
+        o_next_pred, r_pred = model(samples["o"], samples["a"])
+        sigma = o_next_pred[1]
+        sigma_2 = r_pred[1]
+        mu = o_next_pred[0]
+        #print(torch.max(torch.abs(mu)))
+        target = samples["o_next"]
+        #print(torch.max(sigma))
+        #print(torch.max(sigma_2))
+        loss1 = torch.mean((mu - target) / sigma * (mu - target))
+        # print(mu-target)
+        loss3 = torch.mean(torch.log(torch.prod(sigma, 1))) + torch.mean(torch.log(torch.prod(sigma_2, 1)))
+        mu2 = r_pred[0]
+        #print(torch.max(torch.abs(mu)))
+        target = samples["r"].unsqueeze(-1)
+        loss2 = torch.mean((mu2 - target) / sigma_2 * (mu2 - target))
+        # print(mu2-target)
+        # print(sigma_2)
+        loss = loss1 + loss2 + loss3
+        optim.zero_grad()
+        loss.backward()
+        optim.step()

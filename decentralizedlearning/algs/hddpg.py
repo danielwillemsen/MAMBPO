@@ -8,7 +8,7 @@ from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import ActorCritic
 from decentralizedlearning.algs.utils import ReplayBuffer
 from decentralizedlearning.algs.utils import loss_critic
-from decentralizedlearning.algs.utils import Model
+from decentralizedlearning.algs.models import Model
 from decentralizedlearning.algs.utils import check_cuda
 from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 from decentralizedlearning.algs.utils import update_target_networks
@@ -96,7 +96,7 @@ class HDDPGAgent:
         if self.par.use_OU:
             self.ou.reset()
 
-    def step(self, o, r, eval=False, done=False) -> np.ndarray:
+    def step(self, o, r, eval=False, done=False, generate_val_data=False) -> np.ndarray:
         o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
 
         # If evaluation mode: only select action and exit.
@@ -143,7 +143,7 @@ class HDDPGAgent:
         if not self.par.use_model:
             b = self.buffer.sample_tensors(n=self.par.batch_size)
         elif not self.par.use_real_model:
-            model = random.choice(self.models)
+            model = random.sample(self.models)
             b = self.sample_from_model(model)
         else:
             b = self.sample_from_real_model()
@@ -238,7 +238,7 @@ class HDDPGAgent:
         for batch in range(batches):
             b = self.buffer.sample_tensors(n=size).copy()
             for _ in range(rollout):
-                model = random.choice(self.models)
+                model = random.sample(self.models)
                 with torch.no_grad():
                     action = self.ac.actor(b["o"])
                     if self.par.use_OU:
