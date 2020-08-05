@@ -26,9 +26,9 @@ class OUNoise:
         return self.state
 
 class ReplayBuffer():
-    def __init__(self, size=1000000):
+    def __init__(self, size=1000000, batch_size=128):
         self.buffer = []
-        self.n_samples = 128
+        self.n_samples = batch_size
         self.max_size = size
 
     def len(self):
@@ -48,7 +48,9 @@ class ReplayBuffer():
         data_dict = {"o": data[0], "a": data[1], "r": data[2], "o_next": data[3], "done": data[3]}
         return data_dict
 
-    def sample_tensors(self, n=128):
+    def sample_tensors(self, n=None):
+        if not n:
+            n=self.n_samples
         samples = random.sample(self.buffer, k=n)
         data = [*zip(*samples)]
         #data_dict = {"o": torch.stack(data[0]), "a": torch.stack(data[1]), "r": torch.stack(data[2]), "o_next": torch.stack(data[3]), "done": torch.stack(data[4])}

@@ -79,6 +79,8 @@ def train(env, agents, n_episodes=10000, generate_val_data=False):
         logger.info("Generating val data")
         for _ in range(1):
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
+            score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
+            score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
 
     for i in range(n_episodes):
         logger.info("episode:"+str(i))
@@ -126,12 +128,12 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    env = EnvWrapper("gym", "HopperBulletEnv-v0")
-
+    env = EnvWrapper("gym", "HalfCheetahBulletEnv-v0")
+    # env.env.render()
     # execution loop
     n_runs = 1
     logdata = dict()
-    logfile = "./logs/mb_bigtest_cheetah3"
+    logfile = "./logs/test_steps8"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -144,11 +146,16 @@ if __name__ == '__main__':
         for run in range(n_runs):
             logger.info("run:"+str(run))
             agent_fn = SAC
-            for steps in [1, 2]:
-                agent_kwargs = {"n_steps": steps, "use_model": False}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=1000)
+            for steps in [5, 1, 10]:
+
+
+                agent_kwargs = {"n_steps": steps, "use_model": True, "use_model_stochastic": True}
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=100)
                 p.dump(logdata, open(logfile, "wb"))
 
+                agent_kwargs = {"n_steps": steps, "use_model": False}
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=100)
+                p.dump(logdata, open(logfile, "wb"))
                 # agent_kwargs = {"n_steps": steps, "use_model": True, "diverse": False}
                 # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=250)
                 # p.dump(logdata, open(logfile, "wb"))

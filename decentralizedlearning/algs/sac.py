@@ -12,7 +12,7 @@ from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
 from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 from decentralizedlearning.algs.models import EnsembleModel
-
+import logging
 class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
@@ -25,16 +25,17 @@ class SACHyperPar:
         self.gamma = float(kwargs.get("gamma", 0.99))
         self.tau = float(kwargs.get("tau", 0.005))
         self.delay = int(kwargs.get("delay", 2))
-        self.lr_actor = float(kwargs.get("lr_actor", 0.001))
-        self.lr_critic = float(kwargs.get("lr_critic", 0.001))
-        self.lr_model = float(kwargs.get("lr_model", 0.00025))
+        self.lr_actor = float(kwargs.get("lr_actor", 0.0003))
+        self.lr_critic = float(kwargs.get("lr_critic", 0.0003))
+        self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
 
         self.step_random = int(kwargs.get("step_random", 500))
-        self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 5))
+        self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
+        self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",1))
         self.update_steps = int(kwargs.get("n_steps", 5))
         self.n_models = int(kwargs.get("n_models", 10))
-        self.batch_size = int(kwargs.get("batch_size", 128))
+        self.batch_size = int(kwargs.get("batch_size", 256))
         self.weight_decay = float(kwargs.get("weight_decay", 0.0000))
         self.alpha = float(kwargs.get("alpha",0.05))
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
@@ -42,10 +43,14 @@ class SACHyperPar:
         self.monitor_losses = bool(kwargs.get("monitor_losses", True))
         self.use_model_stochastic = bool(kwargs.get("use_model_stochastic", False))
         self.diverse = bool(kwargs.get("diverse", True))
+        self.autotune = bool(kwargs.get("autotune", True))
+        self.target_entropy = float(kwargs.get("target_entropy", -3.))
 
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
+        self.logger = logging.getLogger('root')
+
         if torch.cuda.is_available():
             print("Using CUDA")
             self.device = torch.device("cuda:0")
@@ -75,6 +80,14 @@ class SAC:
         for par in self.actor_target.parameters():
             par.requires_grad = False
 
+        if self.par.autotune:
+            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
+            self.optimizer_alpha = torch.optim.Adam([self.log_alpha],
+                                                    lr=0.001)#self.par.lr_actor)
+            self.alpha = self.log_alpha.exp().item()
+        else:
+            self.alpha = self.par.alpha
+
         if self.par.use_model:
             self.model = EnsembleModel(obs_dim + action_dim,
                                        self.par.hidden_dims_model,
@@ -103,11 +116,11 @@ class SAC:
         if self.par.use_OU:
             self.ou = OUNoise(action_dim)
 
-        self.real_buffer = ReplayBuffer()
+        self.real_buffer = ReplayBuffer(batch_size=self.par.batch_size)
         if self.par.monitor_losses:
-            self.val_buffer = ReplayBuffer()
+            self.val_buffer = ReplayBuffer(batch_size=2500)
         if self.par.use_model:
-            self.fake_buffer = ReplayBuffer(size=20000)
+            self.fake_buffer = ReplayBuffer(size=256, batch_size=self.par.batch_size)
             self.ac_buffer = self.fake_buffer
         else:
             self.ac_buffer = self.real_buffer
@@ -149,23 +162,25 @@ class SAC:
         if self.o_old is not None:
             self.real_buffer.add((self.o_old, self.a_old, r, o, done))
 
-        if self.step_i % self.par.update_every_n_steps == 0:
+        if self.step_i % self.par.update_model_every_n_steps == 0:
             #Update model and generate new samples:
             if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
-                for i in range(5):
+                for i in range(1*self.par.update_every_n_steps):
                     self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
                 #self.model.generate_batch(self.real_buffer.sample_tensors())
-                if self.par.monitor_losses and self.step_i % (self.par.update_every_n_steps*100) == 0:
+                if self.par.monitor_losses and self.step_i % (250) == 0:
                     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
                     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
+                    self.logger.info("alpha:"+str(self.alpha))
                     print(len(self.fake_buffer))
-                for i in range(5):
-                    fake_samples = self.model.generate(self.real_buffer.sample_tensors(), self.actor, diverse=self.par.diverse)
+
+
+        if self.step_i % self.par.update_every_n_steps == 0:
+            for step in range(self.par.update_steps*self.par.update_every_n_steps):
+                if self.real_buffer.len() >= self.par.batch_size and self.step_i>self.par.step_random and self.par.use_model:
+                    fake_samples = self.model.generate(self.real_buffer.sample_tensors(), self.actor, diverse=self.par.diverse, batch_size=self.par.batch_size)
                     for item in fake_samples:
                         self.fake_buffer.add(item)
-
-            for step in range(self.par.update_steps*self.par.update_every_n_steps):
-                if self.ac_buffer.len() > self.par.batch_size:
                     # Train actor and critic
                     b = self.ac_buffer.sample_tensors(n=self.par.batch_size)
 
@@ -222,9 +237,18 @@ class SAC:
             q_min = torch.min(q1, q2)
         else:
             q_min = q1
-        loss_actor = - torch.mean(q_min - logp_pi * self.par.alpha)
+        loss_actor = - torch.mean(q_min - logp_pi * self.alpha)
         loss_actor.backward()
         self.optimizer_actor.step()
+
+        if self.par.autotune:
+            with torch.no_grad():
+                _, logp_pi = self.actor(b["o"], sample=False)
+            alpha_loss = (-self.log_alpha * (logp_pi + self.par.target_entropy)).mean()
+            self.optimizer_alpha.zero_grad()
+            alpha_loss.backward()
+            self.optimizer_alpha.step()
+            self.alpha = self.log_alpha.exp().item()
         for par in self.critics[0].parameters():
             par.requires_grad = True
 
@@ -232,7 +256,7 @@ class SAC:
         with torch.no_grad():
             a_target, logp_pi = self.actor_target(b["o_next"], sample=False)
             y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * (torch.min(
-                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target]) - self.par.alpha * logp_pi)
+                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target]) - self.alpha * logp_pi)
 
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)

@@ -27,16 +27,20 @@ class EnsembleModel(nn.Module):
         target_o = samples["o_next"]
         target_r = samples["r"].unsqueeze(-1)
 
-        sigma_o = o_next_pred[1]
-        sigma_r = r_pred[1]
+        log_var_o = o_next_pred[1]
+        log_var_r = r_pred[1]
+        inv_var_o = torch.exp(-log_var_o)
+        inv_var_r = torch.exp(-log_var_r)
         mu_o = o_next_pred[0]
         mu_r = r_pred[0]
 
-        loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
-        loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
         if self.use_stochastic:
-            loss3 = torch.mean(torch.log(torch.prod(sigma_o, 2)))# + torch.mean(torch.log(torch.prod(sigma_r, 2)))
+            loss1 = torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o))
+            loss2 = torch.mean((mu_r - target_r) * inv_var_r * (mu_r - target_r))
+            loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
         else:
+            loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
+            loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
             loss3 = 0.
         loss = loss1 + loss2 + loss3
 
@@ -56,13 +60,16 @@ class EnsembleModel(nn.Module):
 
         loss_o = torch.mean((mu_o - target_o) * (mu_o - target_o))
         loss_r = torch.mean((mu_r - target_r) * (mu_r - target_r))
-        self.logger.info(name+"_loss_o:"+str(loss_o.data))
-        self.logger.info(name+"_loss_r:"+str(loss_r.data))
-        self.logger.info(name+"_abs_o:"+str(torch.mean(torch.abs(target_o)).data))
-        self.logger.info(name+"_abs_r:"+str(torch.mean(torch.abs(target_r)).data))
+        self.logger.info(name+"_loss_o:"+str(loss_o.item()))
+        self.logger.info(name+"_loss_r:"+str(loss_r.item()))
+        self.logger.info(name + "_log_var_o:" + str(torch.mean(sigma_o.data).item()))
+        self.logger.info(name + "_log_var_r:" + str(torch.mean(sigma_r.data).item()))
+
+        self.logger.info(name+"_abs_o:"+str(torch.mean(torch.abs(target_o)).item()))
+        self.logger.info(name+"_abs_r:"+str(torch.mean(torch.abs(target_r)).item()))
         self.logger.info("\n")
 
-    def generate(self, samples, actor, diverse=True):
+    def generate(self, samples, actor, diverse=True, batch_size=128):
         with torch.no_grad():
             o = samples["o"]
             if not diverse:
@@ -72,11 +79,19 @@ class EnsembleModel(nn.Module):
             n_models = len(self.models)
             o_next_pred, r_pred = self(o, a)
             mu_o = o_next_pred[0]
+            log_var_o = o_next_pred[1]
             mu_r = r_pred[0]
+            log_var_r = r_pred[1]
             ret_samples = []
-            randomlist = random.choices(range(0, n_models), k=128)
-            for i in range(128):
-                ret_samples.append((o[i], a[i], mu_r[randomlist[i],i][0], mu_o[randomlist[i],i], samples["done"][i]))
+            randomlist = random.choices(range(0, n_models), k=batch_size)
+            if self.use_stochastic:
+                new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
+                r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
+            for i in range(batch_size):
+                if self.use_stochastic:
+                    ret_samples.append((o[i], a[i], r[randomlist[i],i][0], new_o[randomlist[i],i], samples["done"][i]))
+                else:
+                    ret_samples.append((o[i], a[i], mu_r[randomlist[i],i][0], mu_o[randomlist[i],i], samples["done"][i]))
                 # ret_samples.append((samples["o"][i], samples["a"][i], samples["r"][i], samples["o_next"][i], samples["done"][i]))
 
         return ret_samples
@@ -103,29 +118,38 @@ class Model(nn.Module):
         self.mu_reward = nn.Linear(hidden_dims[-1], 1)
 
         if self.use_stochastic:
-            self.sigma_output = nn.Linear(hidden_dims[-1], obs_dim)
-            self.sigma_reward = nn.Linear(hidden_dims[-1], 1)
+            self.var_output = nn.Linear(hidden_dims[-1], obs_dim)
+            self.var_reward = nn.Linear(hidden_dims[-1], 1)
 
 
     def forward(self, observation, action):
         x = torch.cat([observation, action], dim=-1)
         x = self.net(x)
         if self.use_stochastic:
-            s_output = 10.*torch.tanh(self.sigma_output(x))
-            s_reward = 10.*torch.tanh(self.sigma_reward(x))
-            return [self.mu_output(x), torch.exp(s_output)], [self.mu_reward(x), torch.exp(s_reward)]
+            MAX_LOG_VAR = .5
+            MIN_LOG_VAR = -10.
+            log_var_output = self.var_output(x)
+            log_var_reward = self.var_reward(x)
+
+            log_var_output = MAX_LOG_VAR - F.softplus(MAX_LOG_VAR - log_var_output)
+            log_var_reward = MAX_LOG_VAR - F.softplus(MAX_LOG_VAR - log_var_reward)
+
+            log_var_output = MIN_LOG_VAR + F.softplus(log_var_output - MIN_LOG_VAR)
+            log_var_reward = MIN_LOG_VAR + F.softplus(log_var_reward - MIN_LOG_VAR)
+
+            return [self.mu_output(x), log_var_output], [self.mu_reward(x), log_var_reward]
         else:
             mu_out = self.mu_output(x)
             mu_rew = self.mu_reward(x)
 
-            s_output = mu_out*0.
-            s_reward = mu_out*0.
-            return [mu_out, s_output], [mu_rew, s_reward]
+            var_output = mu_out*0.
+            var_reward = mu_out*0.
+            return [mu_out, var_output], [mu_rew, var_reward]
 
-
-    def sample(self, observation, action):
-        with torch.no_grad():
-            new_o, r = self.forward(observation, action)
-            new_o = torch.normal(new_o[0], torch.sqrt(new_o[1]))
-            r = torch.normal(r[0], 0.*torch.sqrt(r[1]))
-        return new_o, r
+    #
+    # def sample(self, observation, action):
+    #     with torch.no_grad():
+    #         new_o, r = self.forward(observation, action)
+    #         new_o = torch.normal(new_o[0], torch.sqrt(new_o[1]))
+    #         r = torch.normal(r[0], torch.sqrt(r[1]))
+    #     return new_o, r

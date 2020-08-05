@@ -1,12 +1,23 @@
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
-files = ["mb_bigtest_cheetah3.log"]
+#files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
+files = ["test_steps8.log"]
+
 def update_var(line, var, name, type):
     if name in line:
         var = type(line[line.find(name+":")+len(name+":"):])
     return var
+
+def moving_average(a, n=50) :
+    b = np.zeros(a.size)
+    for i in range(len(a)):
+        if i>=n:
+            b[i] = np.mean(a[i-n:i+1])
+        else:
+            b[i] = np.mean(a[0:i+1])
+    return b
 
 data = dict()
 for file in files:
@@ -58,10 +69,14 @@ plt.show()
 
 for name, agent in data.items():
     if len(agent["ep"])>0:
-        plt.plot(agent["steps"], agent["score"], label=name)
+        plt.plot(agent["steps"], moving_average(np.asarray(agent["score"]),10), label=name)
 plt.legend()
 plt.show()
-
+for name, agent in data.items():
+    if len(agent["ep"])>0:
+        plt.plot(agent["steps"], agent["time"], label=name)
+plt.legend()
+plt.show()
 for name, agent in data.items():
     if len(agent["ep"])>0:
         plt.semilogy(agent["ep"], agent["train_loss_r"], label="train-r")
