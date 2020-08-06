@@ -3,7 +3,7 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["test_steps8.log"]
+files = ["test_steps10.log", "test_steps12.log"]
 
 def update_var(line, var, name, type):
     if name in line:

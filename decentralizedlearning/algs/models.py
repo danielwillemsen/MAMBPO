@@ -5,6 +5,7 @@ import torch
 import copy
 import random
 import logging
+import itertools
 
 class EnsembleModel(nn.Module):
     def __init__(self, input_dim, hidden_dims, obs_dim, n_models, monitor_losses=False, use_stochastic=True):
@@ -47,6 +48,53 @@ class EnsembleModel(nn.Module):
         optim.zero_grad()
         loss.backward()
         optim.step()
+
+    def get_mse_losses(self, samples):
+        with torch.no_grad():
+            o_next_pred, r_pred = self(samples["o"], samples["a"])
+            target_o = samples["o_next"]
+            target_r = samples["r"].unsqueeze(-1)
+
+            log_var_o = o_next_pred[1]
+            log_var_r = r_pred[1]
+            inv_var_o = torch.exp(-log_var_o)
+            inv_var_r = torch.exp(-log_var_r)
+            mu_o = o_next_pred[0]
+            mu_r = r_pred[0]
+
+            if self.use_stochastic:
+                loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
+                loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
+            else:
+                loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
+                loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
+        return loss1, loss2
+
+    def train_models(self, optim, buffer, holdout=0.1):
+        batch_size = 256
+        buff_train, buff_val = buffer.get_buffer_split(holdout=0.1)
+        epoch_iter = range(1000)#itertools.count()
+        grad_steps = 0
+        stop_count = 0
+        sum_loss = 999.
+        best = self.state_dict()
+        for epoch in epoch_iter:
+            for batch_num in range(int(len(buff_train)/batch_size)):
+                self.update_step(optim, buff_train.sample_tensors(n=batch_size))
+                grad_steps += 1
+            loss_o, loss_r = self.get_mse_losses(buff_val.get_all())
+            self.logger.info("Loss_mod:"+str((loss_o + loss_r).item()))
+            if sum_loss > loss_o + loss_r:
+                sum_loss = loss_o + loss_r
+                stop_count = 0
+                best = self.state_dict()
+            else:
+                stop_count += 1
+            if stop_count >= 5:
+                break
+        self.load_state_dict(best)
+        self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))
+        return
 
     def log_loss(self, samples, name):
         o_next_pred, r_pred = self(samples["o"], samples["a"])

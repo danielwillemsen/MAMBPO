@@ -57,6 +57,42 @@ class ReplayBuffer():
         data_dict = {"o": torch.cat(data[0]).view(n,-1), "a":torch.cat(data[1]).view(n, -1), "r": torch.stack(data[2]), "o_next": torch.cat(data[3]).view(n, -1), "done": torch.stack(data[4])}
         return data_dict
 
+    def get_all(self):
+        buffer_copy = random.sample(self.buffer, k=len(self.buffer))
+        n = len(buffer_copy)
+        data = [*zip(*buffer_copy)]
+
+        # data_dict = {"o": torch.stack(data[0]), "a": torch.stack(data[1]), "r": torch.stack(data[2]), "o_next": torch.stack(data[3]), "done": torch.stack(data[4])}
+        data_dict = {"o": torch.cat(data[0]).view(n, -1), "a": torch.cat(data[1]).view(n, -1),
+                     "r": torch.stack(data[2]), "o_next": torch.cat(data[3]).view(n, -1), "done": torch.stack(data[4])}
+        return data_dict
+
+    def get_all_split(self, holdout):
+        buffer_copy = random.sample(self.buffer, k=len(self.buffer))
+        n = len(buffer_copy)
+        n_val = int(holdout*n)
+        data_val = [*zip(*buffer_copy[:n_val])]
+        data_train = [*zip(*buffer_copy[n_val:])]
+        data_val_dict = {"o": torch.cat(data_val[0]).view(n_val, -1), "a": torch.cat(data_val[1]).view(n_val, -1),
+                     "r": torch.stack(data_val[2]), "o_next": torch.cat(data_val[3]).view(n_val, -1),
+                         "done": torch.stack(data_val[4])}
+        data_train_dict = {"o": torch.cat(data_train[0]).view(n-n_val, -1), "a": torch.cat(data_train[1]).view(n-n_val, -1),
+                     "r": torch.stack(data_train[2]), "o_next": torch.cat(data_train[3]).view(n-n_val, -1),
+                           "done": torch.stack(data_train[4])}
+
+        return data_train_dict, data_val, n_val, n-n_val
+
+    def get_buffer_split(self, holdout):
+        buffer_copy = random.sample(self.buffer, k=len(self.buffer))
+        n = len(buffer_copy)
+        n_val = int(holdout*n)
+        buff_train = ReplayBuffer()
+        buff_val = ReplayBuffer()
+        buff_train.buffer = buffer_copy[n_val:]
+        buff_val.buffer = buffer_copy[:n_val]
+        return buff_train, buff_val
+
+
 
 class ActorCritic(nn.Module):
     def __init__(self, obs_dim, action_dim, hidden_dims_actor=(256, 256), hidden_dims_critic=(256,256)):

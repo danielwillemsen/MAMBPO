@@ -30,9 +30,9 @@ class SACHyperPar:
         self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
 
-        self.step_random = int(kwargs.get("step_random", 500))
+        self.step_random = int(kwargs.get("step_random", 5000))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
-        self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",1))
+        self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",1000))
         self.update_steps = int(kwargs.get("n_steps", 5))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 256))
@@ -165,8 +165,9 @@ class SAC:
         if self.step_i % self.par.update_model_every_n_steps == 0:
             #Update model and generate new samples:
             if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
-                for i in range(1*self.par.update_every_n_steps):
-                    self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
+                #for i in range(1*self.par.update_every_n_steps):
+                    #self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
+                self.model.train_models(self.optimizer_model, self.real_buffer)
                 #self.model.generate_batch(self.real_buffer.sample_tensors())
                 if self.par.monitor_losses and self.step_i % (250) == 0:
                     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
@@ -177,10 +178,11 @@ class SAC:
 
         if self.step_i % self.par.update_every_n_steps == 0:
             for step in range(self.par.update_steps*self.par.update_every_n_steps):
-                if self.real_buffer.len() >= self.par.batch_size and self.step_i>self.par.step_random and self.par.use_model:
-                    fake_samples = self.model.generate(self.real_buffer.sample_tensors(), self.actor, diverse=self.par.diverse, batch_size=self.par.batch_size)
-                    for item in fake_samples:
-                        self.fake_buffer.add(item)
+                if self.real_buffer.len() >= self.par.batch_size and self.step_i>self.par.step_random:
+                    if self.par.use_model:
+                        fake_samples = self.model.generate(self.real_buffer.sample_tensors(), self.actor, diverse=self.par.diverse, batch_size=self.par.batch_size)
+                        for item in fake_samples:
+                            self.fake_buffer.add(item)
                     # Train actor and critic
                     b = self.ac_buffer.sample_tensors(n=self.par.batch_size)
 
