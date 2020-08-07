@@ -8,7 +8,7 @@ import pybullet_envs
 import argparse
 import numpy as np
 from envwrapper import EnvWrapper
-
+import itertools
 from decentralizedlearning.algs.hddpg import HDDPGAgent
 from decentralizedlearning.algs.td3 import TD3
 from decentralizedlearning.algs.modelbased import ModelAgent
@@ -67,7 +67,7 @@ def run_episode(env, agents, eval=False,render=False, generate_val_data=False, s
         agent.reset()
     return reward_tot, i+1
 
-def train(env, agents, n_episodes=10000, generate_val_data=False):
+def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
     logger = logging.getLogger('root')
     scores = []
     scores_eval = []
@@ -75,14 +75,13 @@ def train(env, agents, n_episodes=10000, generate_val_data=False):
     time_start = time.time()
     step_tot = 0
     steps = []
+    ep_generator = range(n_episodes) if n_episodes else itertools.count()
     if generate_val_data:
         logger.info("Generating val data")
-        for _ in range(1):
-            score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
-            score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
+        while len(agents[0].val_buffer) < agents[0].val_buffer.n_samples:
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
 
-    for i in range(n_episodes):
+    for i in ep_generator:
         logger.info("episode:"+str(i))
         if i%2 == 0:
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
@@ -97,11 +96,12 @@ def train(env, agents, n_episodes=10000, generate_val_data=False):
         step_tot += step
         steps.append(step_tot)
         logger.info("step_tot:"+str(step_tot))
-
+        if n_steps and step_tot > n_steps:
+            break
         # logger.info("score_eval:"+str(score_eval))
     return {"scores": scores, "steps": steps, "scores_eval": scores_eval, "times": times}
 
-def single_run(env, agent_fn, logdata, seed, agent_kwargs=dict(), n_episodes=50):
+def single_run(env, agent_fn, logdata, seed, agent_kwargs=dict(), n_episodes=None, n_steps=None):
     logger = logging.getLogger(__name__)
     name = agent_fn.__name__ + str(agent_kwargs)
     logger.info("agent:"+name)
@@ -113,7 +113,7 @@ def single_run(env, agent_fn, logdata, seed, agent_kwargs=dict(), n_episodes=50)
     agents = []
     for i in range(env.n_agents):
         agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
-    logdata[name].append(train(env, agents, n_episodes=n_episodes, generate_val_data=True))
+    logdata[name].append(train(env, agents, n_episodes=n_episodes, n_steps=n_steps, generate_val_data=True))
     #env.close()
 
 if __name__ == '__main__':
@@ -133,7 +133,7 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 1
     logdata = dict()
-    logfile = "./logs/test_steps12"
+    logfile = "./logs/test"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -146,15 +146,17 @@ if __name__ == '__main__':
         for run in range(n_runs):
             logger.info("run:"+str(run))
             agent_fn = SAC
-            for steps in [5, 10]:
+            for steps in [5]:
+
+                #
+                # agent_kwargs = {"n_steps": steps, "use_model": False}
+                # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
+                # p.dump(logdata, open(logfile, "wb"))
+
+
                 agent_kwargs = {"n_steps": steps, "use_model": True, "use_model_stochastic": True}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=100)
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=999)
                 p.dump(logdata, open(logfile, "wb"))
-
-                agent_kwargs = {"n_steps": steps, "use_model": False}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=100)
-                p.dump(logdata, open(logfile, "wb"))
-
 
 
 

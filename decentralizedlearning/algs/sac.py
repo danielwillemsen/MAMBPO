@@ -16,11 +16,11 @@ import logging
 class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (256, 256)))
+                                             (16,)))
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (256, 256)))
+                                              (16,)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
-                                             (200, 200, 200, 200)))
+                                             (16,)))
         self.use_OU = bool(kwargs.get("use_OU", False))
         self.gamma = float(kwargs.get("gamma", 0.99))
         self.tau = float(kwargs.get("tau", 0.005))
@@ -30,7 +30,7 @@ class SACHyperPar:
         self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
 
-        self.step_random = int(kwargs.get("step_random", 5000))
+        self.step_random = int(kwargs.get("step_random", 000))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",1000))
         self.update_steps = int(kwargs.get("n_steps", 5))
@@ -118,7 +118,7 @@ class SAC:
 
         self.real_buffer = ReplayBuffer(batch_size=self.par.batch_size)
         if self.par.monitor_losses:
-            self.val_buffer = ReplayBuffer(batch_size=2500)
+            self.val_buffer = ReplayBuffer(batch_size=100)
         if self.par.use_model:
             self.fake_buffer = ReplayBuffer(size=256, batch_size=self.par.batch_size)
             self.ac_buffer = self.fake_buffer
@@ -180,7 +180,7 @@ class SAC:
             for step in range(self.par.update_steps*self.par.update_every_n_steps):
                 if self.real_buffer.len() >= self.par.batch_size and self.step_i>self.par.step_random:
                     if self.par.use_model:
-                        fake_samples = self.model.generate(self.real_buffer.sample_tensors(), self.actor, diverse=self.par.diverse, batch_size=self.par.batch_size)
+                        fake_samples = self.model.generate(self.real_buffer.sample_tensors(n=1024), self.actor, diverse=self.par.diverse, batch_size=1024)#self.par.batch_size)
                         for item in fake_samples:
                             self.fake_buffer.add(item)
                     # Train actor and critic
