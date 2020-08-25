@@ -17,7 +17,8 @@ class EnsembleModel(nn.Module):
         self.models = nn.ModuleList([Model(input_dim, hidden_dims, obs_dim, use_stochastic=use_stochastic) for i in range(n_models)])
 
     def forward(self, observation, action):
-        model_outs = [model(observation, action) for model in self.models]
+        x = torch.cat([observation, action], dim=-1)
+        model_outs = [model(x) for model in self.models]
         o_next_pred, r_pred = (zip(*model_outs))
         o_next_pred = [torch.stack(item) for item in zip(*o_next_pred)]
         r_pred = [torch.stack(item) for item in zip(*r_pred)]
@@ -144,6 +145,32 @@ class EnsembleModel(nn.Module):
 
         return ret_samples
 
+    def generate_efficient(self, samples, actor, diverse=True, batch_size=128):
+        with torch.no_grad():
+            o = samples["o"]
+            if not diverse:
+                a = samples["a"]#actor(o, greedy=False)
+            else:
+                a = actor(o, greedy=False)
+            n_models = len(self.models)
+            o_next_pred, r_pred = self(o, a)
+            mu_o = o_next_pred[0]
+            log_var_o = o_next_pred[1]
+            mu_r = r_pred[0]
+            log_var_r = r_pred[1]
+            ret_samples = []
+            idx = [i for i in range(batch_size)]
+            randomlist = random.choices(range(n_models), k=batch_size)
+            if self.use_stochastic:
+                new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
+                r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
+            return (o, a, r[randomlist, idx, :].squeeze(-1), new_o[randomlist, idx, :], samples["done"])
+            # for i in range(batch_size):
+            #     if self.use_stochastic:
+            #         ret_samples.append((o[i], a[i], r[randomlist[i],i][0], new_o[randomlist[i],i], samples["done"][i]))
+            #     else:
+            #         ret_samples.append((o[i], a[i], mu_r[randomlist[i],i][0], mu_o[randomlist[i],i], samples["done"][i]))
+
 class Model(nn.Module):
     """Model.
     Contains a probabilistic world model. Outputs 2 lists: one containing mu, sigma of reward, second containing mu, sigma of observation
@@ -157,6 +184,8 @@ class Model(nn.Module):
         """
         super().__init__()
         self.use_stochastic = use_stochastic
+        self.MAX_LOG_VAR = torch.tensor(0.5, dtype=torch.float32)
+        self.MIN_LOG_VAR = torch.tensor(-10., dtype=torch.float32)
         layers = []
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.Tanh()]
         for i in range(len(hidden_dims) - 1):
@@ -169,21 +198,18 @@ class Model(nn.Module):
             self.var_output = nn.Linear(hidden_dims[-1], obs_dim)
             self.var_reward = nn.Linear(hidden_dims[-1], 1)
 
-
-    def forward(self, observation, action):
-        x = torch.cat([observation, action], dim=-1)
-        x = self.net(x)
+    def forward(self, input):
+        # x = torch.cat([observation, action], dim=-1)
+        x = self.net(input)
         if self.use_stochastic:
-            MAX_LOG_VAR = .5
-            MIN_LOG_VAR = -10.
             log_var_output = self.var_output(x)
             log_var_reward = self.var_reward(x)
 
-            log_var_output = MAX_LOG_VAR - F.softplus(MAX_LOG_VAR - log_var_output)
-            log_var_reward = MAX_LOG_VAR - F.softplus(MAX_LOG_VAR - log_var_reward)
+            log_var_output = self.MAX_LOG_VAR - F.softplus(self.MAX_LOG_VAR - log_var_output)
+            log_var_reward = self.MAX_LOG_VAR - F.softplus(self.MAX_LOG_VAR - log_var_reward)
 
-            log_var_output = MIN_LOG_VAR + F.softplus(log_var_output - MIN_LOG_VAR)
-            log_var_reward = MIN_LOG_VAR + F.softplus(log_var_reward - MIN_LOG_VAR)
+            log_var_output = self.MIN_LOG_VAR + F.softplus(log_var_output - self.MIN_LOG_VAR)
+            log_var_reward = self.MIN_LOG_VAR + F.softplus(log_var_reward - self.MIN_LOG_VAR)
 
             return [self.mu_output(x), log_var_output], [self.mu_reward(x), log_var_reward]
         else:

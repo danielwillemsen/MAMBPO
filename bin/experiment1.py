@@ -41,12 +41,13 @@ def run_episode(env, agents, eval=False,render=False, generate_val_data=False, s
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
+    done_n = [False for i in range(len(agents))]
     #Start env
     for i in range(steps):
         # query for action from each agent's policy
         act_n = []
         for j, agent in enumerate(agents):
-            action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], eval=eval, generate_val_data=generate_val_data))
+            action = scale_action(env, j, agent.step(obs_n[j], reward_n[j],  done=done_n[j], eval=eval, generate_val_data=generate_val_data))
             act_n.append(action)
         # step environment
         obs_n, reward_n, done_n, _ = env.step(act_n)
@@ -55,7 +56,7 @@ def run_episode(env, agents, eval=False,render=False, generate_val_data=False, s
             reward_tot[j] += r
         if done_n[0]:
             for j, agent in enumerate(agents):
-                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], eval=eval, generate_val_data=generate_val_data))
+                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval, generate_val_data=generate_val_data))
                 act_n.append(action)
                 agent.reset()
             print("Episode finished after {} timesteps".format(i+1))
@@ -128,12 +129,12 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    env = EnvWrapper("gym", "HalfCheetahBulletEnv-v0")
+    env = EnvWrapper("gym", "InvertedPendulum-v2")
     # env.env.render()
     # execution loop
     n_runs = 1
     logdata = dict()
-    logfile = "./logs/test"
+    logfile = "./logs/test_inv"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -146,17 +147,22 @@ if __name__ == '__main__':
         for run in range(n_runs):
             logger.info("run:"+str(run))
             agent_fn = SAC
-            for steps in [5]:
+            agent_kwargs = {"n_steps": 1, "use_model": False}
+            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
+            p.dump(logdata, open(logfile, "wb"))
+            for steps in [10, 20]:
 
                 #
-                # agent_kwargs = {"n_steps": steps, "use_model": False}
-                # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
-                # p.dump(logdata, open(logfile, "wb"))
-
 
                 agent_kwargs = {"n_steps": steps, "use_model": True, "use_model_stochastic": True}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=999)
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
                 p.dump(logdata, open(logfile, "wb"))
+
+                agent_kwargs = {"n_steps": steps, "use_model": False}
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
+                p.dump(logdata, open(logfile, "wb"))
+
+
 
 
 

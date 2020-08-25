@@ -3,7 +3,7 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["test_steps10.log", "test_steps12.log"]
+files = ["test_inv.log"]
 
 def update_var(line, var, name, type):
     if name in line:
@@ -70,11 +70,37 @@ plt.show()
 for name, agent in data.items():
     if len(agent["ep"])>0:
         plt.plot(agent["steps"], moving_average(np.asarray(agent["score"]),10), label=name)
+
+#plot original reults
+tasks = ["cheetah"]
+algorithms = ['mbpo']
+
+colors = {
+	'mbpo': '#1f77b4',
+}
+#
+# import pickle
+# for task in tasks:
+#     for alg in algorithms:
+#         print(task, alg)
+#
+#         ## load results
+#         fname = '../logs/mbpo_v1.5_results/{}_{}.pkl'.format(task, alg)
+#         data = pickle.load(open(fname, 'rb'))
+#
+#         ## plot trial mean
+#         plt.plot(data['x']*1000, data['y'], linewidth=1.5, label=alg, c=colors[alg])
+#         ## plot error bars
+#         plt.fill_between(data['x']*1000, data['y']-data['std'], data['y']+data['std'], color=colors[alg], alpha=0.25)
+#
+
 plt.legend()
 plt.show()
 for name, agent in data.items():
     if len(agent["ep"])>0:
         plt.plot(agent["steps"], agent["time"], label=name)
+
+
 plt.legend()
 plt.show()
 for name, agent in data.items():

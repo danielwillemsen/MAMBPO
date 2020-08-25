@@ -3,7 +3,7 @@ import copy
 import numpy as np
 import time
 
-from decentralizedlearning.algs.utils import ReplayBuffer
+from decentralizedlearning.algs.utils import EfficientReplayBuffer as ReplayBuffer
 
 from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import StochActor
@@ -16,11 +16,11 @@ import logging
 class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (16,)))
+                                             (256,256)))
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (16,)))
+                                              (256,256)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
-                                             (16,)))
+                                             (200,200,200,200)))
         self.use_OU = bool(kwargs.get("use_OU", False))
         self.gamma = float(kwargs.get("gamma", 0.99))
         self.tau = float(kwargs.get("tau", 0.005))
@@ -30,9 +30,9 @@ class SACHyperPar:
         self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
 
-        self.step_random = int(kwargs.get("step_random", 000))
+        self.step_random = int(kwargs.get("step_random", 500))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
-        self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",1000))
+        self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",250))
         self.update_steps = int(kwargs.get("n_steps", 5))
         self.n_models = int(kwargs.get("n_models", 10))
         self.batch_size = int(kwargs.get("batch_size", 256))
@@ -44,7 +44,7 @@ class SACHyperPar:
         self.use_model_stochastic = bool(kwargs.get("use_model_stochastic", False))
         self.diverse = bool(kwargs.get("diverse", True))
         self.autotune = bool(kwargs.get("autotune", True))
-        self.target_entropy = float(kwargs.get("target_entropy", -3.))
+        self.target_entropy = float(kwargs.get("target_entropy", -0.05))
 
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
@@ -116,11 +116,11 @@ class SAC:
         if self.par.use_OU:
             self.ou = OUNoise(action_dim)
 
-        self.real_buffer = ReplayBuffer(batch_size=self.par.batch_size)
+        self.real_buffer = ReplayBuffer(batch_size=self.par.batch_size, device=self.device)
         if self.par.monitor_losses:
-            self.val_buffer = ReplayBuffer(batch_size=100)
+            self.val_buffer = ReplayBuffer(batch_size=100, device=self.device)
         if self.par.use_model:
-            self.fake_buffer = ReplayBuffer(size=256, batch_size=self.par.batch_size)
+            self.fake_buffer = ReplayBuffer(size=self.par.update_steps*self.par.update_every_n_steps*self.par.batch_size*2, batch_size=self.par.batch_size, device=self.device)
             self.ac_buffer = self.fake_buffer
         else:
             self.ac_buffer = self.real_buffer
@@ -140,7 +140,7 @@ class SAC:
 
     def step(self, o, r, eval=False, done=False, generate_val_data=False):
         o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
-
+        # self.logger.info(done)
         if eval:
             # Select greedy action and return
             action = self.select_action(o, "greedy")
@@ -177,12 +177,14 @@ class SAC:
 
 
         if self.step_i % self.par.update_every_n_steps == 0:
-            for step in range(self.par.update_steps*self.par.update_every_n_steps):
-                if self.real_buffer.len() >= self.par.batch_size and self.step_i>self.par.step_random:
-                    if self.par.use_model:
-                        fake_samples = self.model.generate(self.real_buffer.sample_tensors(n=1024), self.actor, diverse=self.par.diverse, batch_size=1024)#self.par.batch_size)
-                        for item in fake_samples:
-                            self.fake_buffer.add(item)
+            if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
+                if self.par.use_model:
+                    fake_samples = self.model.generate_efficient(self.real_buffer.sample_tensors(n=256*self.par.update_steps*self.par.update_every_n_steps*2), self.actor,
+                                                                 diverse=self.par.diverse,
+                                                                 batch_size=256*self.par.update_steps*self.par.update_every_n_steps*2)  # self.par.batch_size)
+                    # for item in fake_samples:
+                    self.fake_buffer.add_multiple(fake_samples)
+                for step in range(self.par.update_steps*self.par.update_every_n_steps):
                     # Train actor and critic
                     b = self.ac_buffer.sample_tensors(n=self.par.batch_size)
 
@@ -257,9 +259,10 @@ class SAC:
     def update_critics(self, b):
         with torch.no_grad():
             a_target, logp_pi = self.actor_target(b["o_next"], sample=False)
-            y = b["r"].unsqueeze(-1) + (1 - b["done"]) * self.par.gamma * (torch.min(
-                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target]) - self.alpha * logp_pi)
-
+            y = b["r"].unsqueeze(-1) + (1 - b["done"]).unsqueeze(-1) * self.par.gamma * (torch.min(
+                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target]) - self.alpha * logp_pi.unsqueeze(-1))
+            # if np.random.random()<0.05:
+            #     self.logger.info(y)
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
 
