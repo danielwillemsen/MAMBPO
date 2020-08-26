@@ -30,7 +30,7 @@ class SACHyperPar:
         self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
 
-        self.step_random = int(kwargs.get("step_random", 500))
+        self.step_random = int(kwargs.get("step_random", 1000))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",250))
         self.update_steps = int(kwargs.get("n_steps", 5))
@@ -45,6 +45,11 @@ class SACHyperPar:
         self.diverse = bool(kwargs.get("diverse", True))
         self.autotune = bool(kwargs.get("autotune", True))
         self.target_entropy = float(kwargs.get("target_entropy", -0.05))
+        self.rollout_length = int(kwargs.get("rollout_length", 1))
+        self.use_rollout_schedule = bool(kwargs.get("use_rollout_schedule", False))
+        self.rollout_schedule_time = list(kwargs.get("rollout_schedule_time", [0,1000]))
+        self.rollout_schedule_val = list(kwargs.get("rollout_schedule_val", [1,10]))
+        self.name = str(kwargs.get("name", "cheetah"))
 
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
@@ -54,10 +59,10 @@ class SAC:
         if torch.cuda.is_available():
             print("Using CUDA")
             self.device = torch.device("cuda:0")
-            #self.device = torch.device("cpu")
         else:
             print("No CUDA found")
             self.device = torch.device("cpu")
+
         # Initialize arguments
         self.use_min = kwargs.get("use_min", True)
         self.use_correct = kwargs.get("use_correct", True)
@@ -65,6 +70,8 @@ class SAC:
             self.par = hyperpar
         else:
             self.par = SACHyperPar(**kwargs)
+
+        self.logger.info(self.par.__dict__)
         self.action_dim = action_dim
 
         # Initialize actor
@@ -94,9 +101,13 @@ class SAC:
                                        obs_dim,
                                        self.par.n_models,
                                        monitor_losses=self.par.monitor_losses,
-                                       use_stochastic=self.par.use_model_stochastic).to(self.device)
+                                       use_stochastic=self.par.use_model_stochastic,
+                                       name=self.par.name,
+                                       device=self.device).to(self.device)
             self.optimizer_model = torch.optim.Adam(self.model.parameters(),
-                                                              lr=self.par.lr_model, amsgrad=True, weight_decay=self.par.l2_norm)
+                                                    lr=self.par.lr_model,
+                                                    amsgrad=True,
+                                                    weight_decay=self.par.l2_norm)
         # Initialize 2 critics
         self.critics = []
         self.critics_target = []
@@ -120,7 +131,7 @@ class SAC:
         if self.par.monitor_losses:
             self.val_buffer = ReplayBuffer(batch_size=100, device=self.device)
         if self.par.use_model:
-            self.fake_buffer = ReplayBuffer(size=self.par.update_steps*self.par.update_every_n_steps*self.par.batch_size*2, batch_size=self.par.batch_size, device=self.device)
+            self.fake_buffer = ReplayBuffer(size=self.par.update_steps*self.par.update_every_n_steps*self.par.batch_size*2*self.par.rollout_length, batch_size=self.par.batch_size, device=self.device)
             self.ac_buffer = self.fake_buffer
         else:
             self.ac_buffer = self.real_buffer
@@ -179,11 +190,12 @@ class SAC:
         if self.step_i % self.par.update_every_n_steps == 0:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
+                    self.update_rollout_length()
                     fake_samples = self.model.generate_efficient(self.real_buffer.sample_tensors(n=256*self.par.update_steps*self.par.update_every_n_steps*2), self.actor,
                                                                  diverse=self.par.diverse,
                                                                  batch_size=256*self.par.update_steps*self.par.update_every_n_steps*2)  # self.par.batch_size)
-                    # for item in fake_samples:
-                    self.fake_buffer.add_multiple(fake_samples)
+                    for item in fake_samples:
+                        self.fake_buffer.add_multiple(item)
                 for step in range(self.par.update_steps*self.par.update_every_n_steps):
                     # Train actor and critic
                     b = self.ac_buffer.sample_tensors(n=self.par.batch_size)
@@ -225,6 +237,12 @@ class SAC:
             else:
                 action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
             return action
+
+    def update_rollout_length(self):
+        if self.par.use_rollout_schedule:
+            normdist = (self.step_i - self.par.rollout_schedule_time[0])/(self.par.rollout_schedule_time[1]-self.par.rollout_schedule_time[0])
+            y = self.par.rollout_schedule_val[0]*(1-normdist) + self.par.rollout_schedule_val[1]*normdist
+            self.par.rollout_length = int(max(min(y, self.par.rollout_schedule_val[1]), self.par.rollout_schedule_val[0]))
 
     def update_actor(self, b):
         for par in self.critics[0].parameters():
@@ -269,63 +287,3 @@ class SAC:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-    def update_models(self):
-        samples = self.buffer.sample_tensors(n=self.par.batch_size)
-        for optim, model in zip(self.optimizer_models, self.models):
-            self.model_step(model, optim, samples)
-
-    def sample_from_model(self, model):
-        # Sample Minibatch
-        b = self.buffer.sample_tensors(n=self.par.batch_size)
-        with torch.no_grad():
-            action = b["a"]#self.ac.actor(b["o"])
-            if self.par.use_OU:
-                action_noisy = action + torch.Tensor(self.ou.noise())[0]
-            else:
-                action_noisy = action + torch.randn(action.size()).to(self.device) * 0.3
-            b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
-        new_o, r = model.sample(b["o"], b["a"])
-        b["o_next"] = new_o
-        b["r"] = r.squeeze()
-        return b
-
-    def generate_from_model(self, rollout=1, batches=10, size=128):
-        for batch in range(batches):
-            b = self.buffer.sample_tensors(n=size).copy()
-            for _ in range(rollout):
-                model = random.choice(self.models)
-                with torch.no_grad():
-                    action = self.ac.actor(b["o"])
-                    if self.par.use_OU:
-                        action_noisy = action + torch.Tensor(self.ou.noise())[0]
-                    else:
-                        action_noisy = action + torch.randn(action.size()) * 0.3
-                    b["a"] = torch.clamp(action_noisy, -1.0, 1.0)
-                new_o, r = model.sample(b["o"], b["a"])
-                for o, a, new_oi, new_ri, done in zip(b["o"], b["a"], new_o, r, b["done"]):
-                    self.tempbuf.add((o, a, new_ri, new_oi, done))
-                b = {"o": new_o, "done": b["done"]}
-
-    def model_step(self, model, optim, samples):
-        o_next_pred, r_pred = model(samples["o"], samples["a"])
-        sigma = o_next_pred[1]
-        sigma_2 = r_pred[1]
-        mu = o_next_pred[0]
-        #print(torch.max(torch.abs(mu)))
-        target = samples["o_next"]
-        #print(torch.max(sigma))
-        #print(torch.max(sigma_2))
-        loss1 = torch.mean((mu - target) / sigma * (mu - target))
-        # print(mu-target)
-        loss3 = torch.mean(torch.log(torch.prod(sigma, 1))) + torch.mean(torch.log(torch.prod(sigma_2, 1)))
-        mu2 = r_pred[0]
-        #print(torch.max(torch.abs(mu)))
-        target = samples["r"].unsqueeze(-1)
-        loss2 = torch.mean((mu2 - target) / sigma_2 * (mu2 - target))
-        # print(mu2-target)
-        # print(sigma_2)
-        loss = loss1 + loss2 + loss3
-        optim.zero_grad()
-        loss.backward()
-        optim.step()

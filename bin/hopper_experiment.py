@@ -114,14 +114,14 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "HalfCheetahBulletEnv-v0"
+    name = "Hopper-v2"
 
     env = EnvWrapper("gym", name)
     # env.env.render()
     # execution loop
     n_runs = 5
     logdata = dict()
-    logfile = "./logs/cheetah_largetest"
+    logfile = "./logs/hopper_largetest"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -132,17 +132,17 @@ if __name__ == '__main__':
         for run in range(n_runs):
             logger.info("run:"+str(run))
             agent_fn = SAC
-            par = get_hyperpar(name, alg="sac")
+            par = get_hyperpar(name, alg="SAC")
             agent_kwargs = {"hyperpar": par}
 
-            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
+            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=125000)
             p.dump(logdata, open(logfile, "wb"))
-            for steps in [40]:
+            for steps in [20]:
 
                 #
                 par = get_hyperpar(name, alg="model")
                 agent_kwargs = {"hyperpar": par}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=125000)
                 p.dump(logdata, open(logfile, "wb"))
                 #
                 # agent_kwargs = {"n_steps": steps, "use_model": False}

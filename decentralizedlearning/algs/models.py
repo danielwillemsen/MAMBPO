@@ -8,13 +8,25 @@ import logging
 import itertools
 
 class EnsembleModel(nn.Module):
-    def __init__(self, input_dim, hidden_dims, obs_dim, n_models, monitor_losses=False, use_stochastic=True):
+    def __init__(self, input_dim, hidden_dims, obs_dim, n_models, monitor_losses=False, use_stochastic=True, name="cheetah", device=None):
         super().__init__()
+        self.device = device
         self.monitor_losses = monitor_losses
         self.use_stochastic = use_stochastic
+        self.name = name
         if monitor_losses:
             self.logger = logging.getLogger('root')
         self.models = nn.ModuleList([Model(input_dim, hidden_dims, obs_dim, use_stochastic=use_stochastic) for i in range(n_models)])
+
+    def termination_fn(self, next_obs, action):
+        if self.name == "Hopper-v2":
+            height = next_obs[:, 0]
+            angle = next_obs[:, 1]
+            not_done = (height > .7) \
+                       * (torch.abs(angle) < .2)
+            return (~not_done).float()
+        else:
+            return torch.zeros(action.shape[0],device=self.device)
 
     def forward(self, observation, action):
         x = torch.cat([observation, action], dim=-1)
@@ -118,7 +130,7 @@ class EnsembleModel(nn.Module):
         self.logger.info(name+"_abs_r:"+str(torch.mean(torch.abs(target_r)).item()))
         self.logger.info("\n")
 
-    def generate(self, samples, actor, diverse=True, batch_size=128):
+    def generate(self, samples, actor, diverse=True, batch_size=128, rollout_length=1):
         with torch.no_grad():
             o = samples["o"]
             if not diverse:
@@ -145,13 +157,19 @@ class EnsembleModel(nn.Module):
 
         return ret_samples
 
-    def generate_efficient(self, samples, actor, diverse=True, batch_size=128):
+    def generate_efficient(self, samples, actor, diverse=True, batch_size=128, rollout_length=1):
+        ret_samples = []
         with torch.no_grad():
+            #for i in range(rollout_length):
+                #if i == 0:
             o = samples["o"]
             if not diverse:
-                a = samples["a"]#actor(o, greedy=False)
+                a = samples["a"] #actor(o, greedy=False)
             else:
                 a = actor(o, greedy=False)
+                #else:
+                #    o = new_o_ret
+                #    a = actor(o, greedy=False)
             n_models = len(self.models)
             o_next_pred, r_pred = self(o, a)
             mu_o = o_next_pred[0]
@@ -164,7 +182,11 @@ class EnsembleModel(nn.Module):
             if self.use_stochastic:
                 new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
                 r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
-            return (o, a, r[randomlist, idx, :].squeeze(-1), new_o[randomlist, idx, :], samples["done"])
+            new_o_ret = new_o[randomlist, idx, :]
+            done = samples["done"]
+            #done = self.termination_fn(new_o_ret, a)
+            ret_samples.append((o, a, r[randomlist, idx, :].squeeze(-1), new_o_ret, done))
+            return ret_samples
             # for i in range(batch_size):
             #     if self.use_stochastic:
             #         ret_samples.append((o[i], a[i], r[randomlist[i],i][0], new_o[randomlist[i],i], samples["done"][i]))
