@@ -132,15 +132,15 @@ if __name__ == '__main__':
         for run in range(n_runs):
             logger.info("run:"+str(run))
             agent_fn = SAC
-            par = get_hyperpar(name, alg="sac")
+            par = get_hyperpar("HalfCheetah-v2", alg="SAC")
             agent_kwargs = {"hyperpar": par}
 
-            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
-            p.dump(logdata, open(logfile, "wb"))
+            #single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
+            #p.dump(logdata, open(logfile, "wb"))
             for steps in [40]:
 
                 #
-                par = get_hyperpar(name, alg="model")
+                par = get_hyperpar("HalfCheetah-v2", alg="model")
                 agent_kwargs = {"hyperpar": par}
                 single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
                 p.dump(logdata, open(logfile, "wb"))

@@ -209,9 +209,9 @@ class Model(nn.Module):
         self.MAX_LOG_VAR = torch.tensor(0.5, dtype=torch.float32)
         self.MIN_LOG_VAR = torch.tensor(-10., dtype=torch.float32)
         layers = []
-        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.Tanh()]
+        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
         for i in range(len(hidden_dims) - 1):
-            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.Tanh()]
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
         self.net = nn.Sequential(*layers)
         self.mu_output = nn.Linear(hidden_dims[-1], obs_dim)
         self.mu_reward = nn.Linear(hidden_dims[-1], 1)

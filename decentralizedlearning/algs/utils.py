@@ -39,6 +39,13 @@ class EfficientReplayBuffer():
         self.next_idx = 0
         self.current_size = 0
 
+    def reallocate(self, size=None):
+        if size:
+            self.max_size = size
+        self.initialized = False
+        self.next_idx = 0
+        self.current_size = 0
+
     def len(self):
         return self.current_size
 

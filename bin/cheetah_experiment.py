@@ -121,7 +121,7 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 5
     logdata = dict()
-    logfile = "./logs/cheetah_test_new"
+    logfile = "./logs/cheetah_relu"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -139,12 +139,12 @@ if __name__ == '__main__':
                 #
                 par = get_hyperpar(name, alg="model")
                 agent_kwargs = {"hyperpar": par}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
                 p.dump(logdata, open(logfile, "wb"))
 
             par = get_hyperpar(name, alg="SAC")
             agent_kwargs = {"hyperpar": par}
-            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
+            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
 
                 #
                 # agent_kwargs = {"n_steps": steps, "use_model": False}

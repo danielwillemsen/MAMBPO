@@ -129,7 +129,7 @@ class SAC:
 
         self.real_buffer = ReplayBuffer(batch_size=self.par.batch_size, device=self.device)
         if self.par.monitor_losses:
-            self.val_buffer = ReplayBuffer(batch_size=100, device=self.device)
+            self.val_buffer = ReplayBuffer(batch_size=500, device=self.device)
         if self.par.use_model:
             self.fake_buffer = ReplayBuffer(size=self.par.update_steps*self.par.update_every_n_steps*self.par.batch_size*2*self.par.rollout_length, batch_size=self.par.batch_size, device=self.device)
             self.ac_buffer = self.fake_buffer
@@ -191,9 +191,11 @@ class SAC:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    fake_samples = self.model.generate_efficient(self.real_buffer.sample_tensors(n=256*self.par.update_steps*self.par.update_every_n_steps*2), self.actor,
+                    batch_this_epoch = self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*2
+                    fake_samples = self.model.generate_efficient(self.real_buffer.sample_tensors(n=batch_this_epoch), self.actor,
                                                                  diverse=self.par.diverse,
-                                                                 batch_size=256*self.par.update_steps*self.par.update_every_n_steps*2)  # self.par.batch_size)
+                                                                 batch_size=batch_this_epoch)  # self.par.batch_size)
+                    self.fake_buffer.reallocate(size=batch_this_epoch*self.par.rollout_length)
                     for item in fake_samples:
                         self.fake_buffer.add_multiple(item)
                 for step in range(self.par.update_steps*self.par.update_every_n_steps):
@@ -283,7 +285,6 @@ class SAC:
             #     self.logger.info(y)
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
