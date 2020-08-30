@@ -62,6 +62,7 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
     step_tot = 0
     steps = []
     ep_generator = range(n_episodes) if n_episodes else itertools.count()
+    logger.info(env.env.observation_space.high)
     if generate_val_data:
         logger.info("Generating val data")
         while len(agents[0].val_buffer) < agents[0].val_buffer.n_samples:
@@ -119,9 +120,9 @@ if __name__ == '__main__':
     env = EnvWrapper("gym", name)
     # env.env.render()
     # execution loop
-    n_runs = 5
+    n_runs = 1
     logdata = dict()
-    logfile = "./logs/cheetah_relu"
+    logfile = "./logs/cheetah_wrong_test"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -135,12 +136,18 @@ if __name__ == '__main__':
 
             p.dump(logdata, open(logfile, "wb"))
             for steps in [40]:
-
                 #
+                par = get_hyperpar(name, alg="model40")
+                agent_kwargs = {"hyperpar": par}
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
+                p.dump(logdata, open(logfile, "wb"))
+                
                 par = get_hyperpar(name, alg="model")
                 agent_kwargs = {"hyperpar": par}
                 single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
                 p.dump(logdata, open(logfile, "wb"))
+
+
 
             par = get_hyperpar(name, alg="SAC")
             agent_kwargs = {"hyperpar": par}

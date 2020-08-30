@@ -33,6 +33,7 @@ class EnsembleModel(nn.Module):
         model_outs = [model(x) for model in self.models]
         o_next_pred, r_pred = (zip(*model_outs))
         o_next_pred = [torch.stack(item) for item in zip(*o_next_pred)]
+        o_next_pred[0] = observation + o_next_pred[0]
         r_pred = [torch.stack(item) for item in zip(*r_pred)]
         return o_next_pred, r_pred
 
@@ -83,9 +84,9 @@ class EnsembleModel(nn.Module):
                 loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
         return loss1, loss2
 
-    def train_models(self, optim, buffer, holdout=0.1):
+    def train_models(self, optim, buffer, holdout=0.2):
         batch_size = 256
-        buff_train, buff_val = buffer.get_buffer_split(holdout=0.1)
+        buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
         epoch_iter = range(1000)#itertools.count()
         grad_steps = 0
         stop_count = 0

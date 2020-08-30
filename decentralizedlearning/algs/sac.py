@@ -49,6 +49,8 @@ class SACHyperPar:
         self.use_rollout_schedule = bool(kwargs.get("use_rollout_schedule", False))
         self.rollout_schedule_time = list(kwargs.get("rollout_schedule_time", [0,1000]))
         self.rollout_schedule_val = list(kwargs.get("rollout_schedule_val", [1,10]))
+        self.real_ratio = float(kwargs.get("real_ratio", 0.05))
+
         self.name = str(kwargs.get("name", "cheetah"))
 
 class SAC:
@@ -90,7 +92,7 @@ class SAC:
         if self.par.autotune:
             self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
             self.optimizer_alpha = torch.optim.Adam([self.log_alpha],
-                                                    lr=0.001)#self.par.lr_actor)
+                                                    lr=self.par.lr_actor)#self.par.lr_actor)
             self.alpha = self.log_alpha.exp().item()
         else:
             self.alpha = self.par.alpha
@@ -200,8 +202,12 @@ class SAC:
                         self.fake_buffer.add_multiple(item)
                 for step in range(self.par.update_steps*self.par.update_every_n_steps):
                     # Train actor and critic
-                    b = self.ac_buffer.sample_tensors(n=self.par.batch_size)
-
+                    n_real = int(self.par.batch_size * self.par.real_ratio)
+                    b_fake = self.ac_buffer.sample_tensors(n=self.par.batch_size-n_real)
+                    b_real = self.real_buffer.sample_tensors(n=n_real)
+                    b = dict()
+                    for key in b_fake.keys():
+                        b[key] = torch.cat([b_fake[key], b_real[key]])
                     # Update Critic
                     self.update_critics(b)
 
@@ -218,7 +224,7 @@ class SAC:
         if self.step_i > self.par.step_random:
             action = self.select_action(o, "noisy")
         else:
-            action = self.select_action(o, "random")
+            action = self.select_action(o, "noisy")
 
         self.o_old = o
         if action.size() == torch.Size([]):
@@ -249,7 +255,6 @@ class SAC:
     def update_actor(self, b):
         for par in self.critics[0].parameters():
             par.requires_grad = False
-        self.optimizer_actor.zero_grad()
         if self.use_correct:
             act, logp_pi = self.actor(b["o"], sample=False)
         else:
@@ -262,6 +267,7 @@ class SAC:
         else:
             q_min = q1
         loss_actor = - torch.mean(q_min - logp_pi * self.alpha)
+        self.optimizer_actor.zero_grad()
         loss_actor.backward()
         self.optimizer_actor.step()
 
@@ -278,13 +284,14 @@ class SAC:
 
     def update_critics(self, b):
         with torch.no_grad():
-            a_target, logp_pi = self.actor_target(b["o_next"], sample=False)
-            y = b["r"].unsqueeze(-1) + (1 - b["done"]).unsqueeze(-1) * self.par.gamma * (torch.min(
-                *[critic_target(b["o_next"], a_target) for critic_target in self.critics_target]) - self.alpha * logp_pi.unsqueeze(-1))
+            next_a, next_logp_pi = self.actor_target(b["o_next"], sample=False)
+            min_next_Q = torch.min(
+                *[critic_target(b["o_next"], next_a).squeeze() for critic_target in self.critics_target])
+            y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.alpha * next_logp_pi)
             # if np.random.random()<0.05:
             #     self.logger.info(y)
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
-            loss = loss_critic(critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
+            loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y, f_hyst=self.par.f_hyst)*0.5 #0.5 is to correspond with code of Janner
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
