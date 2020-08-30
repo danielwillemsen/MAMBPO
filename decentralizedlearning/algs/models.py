@@ -50,14 +50,16 @@ class EnsembleModel(nn.Module):
         mu_r = r_pred[0]
 
         if self.use_stochastic:
-            loss1 = torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o))
-            loss2 = torch.mean((mu_r - target_r) * inv_var_r * (mu_r - target_r))
-            loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
+            l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
+            l2 = torch.sum(torch.mean(torch.cat((log_var_o, log_var_r), dim=-1),dim=(-1,-2)))
+            #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
+            #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
+            #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
         else:
             loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
             loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
             loss3 = 0.
-        loss = loss1 + loss2 + loss3
+        loss = l1+l2
 
         optim.zero_grad()
         loss.backward()
@@ -90,7 +92,8 @@ class EnsembleModel(nn.Module):
         epoch_iter = range(1000)#itertools.count()
         grad_steps = 0
         stop_count = 0
-        sum_loss = 999.
+        loss_o, loss_r = self.get_mse_losses(buff_val.get_all())
+        sum_loss = loss_o + loss_r
         best = self.state_dict()
         for epoch in epoch_iter:
             for batch_num in range(int(len(buff_train)/batch_size)):
@@ -104,7 +107,7 @@ class EnsembleModel(nn.Module):
                 best = self.state_dict()
             else:
                 stop_count += 1
-            if stop_count >= 5:
+            if stop_count >= 10:
                 break
         self.load_state_dict(best)
         self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))

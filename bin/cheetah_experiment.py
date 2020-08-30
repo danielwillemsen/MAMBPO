@@ -47,7 +47,7 @@ def run_episode(env, agents, eval=False,render=False, generate_val_data=False, s
             print("Episode finished after {} timesteps".format(i+1))
             break
         # render all agent views
-        if eval or render:
+        if render:
             env.render()
     for j, agent in enumerate(agents):
         agent.reset()
@@ -73,6 +73,7 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
         if i%2 == 0:
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
         score, step = run_episode(env, agents, render=False)
+        score2, _ = run_episode(env, agents, eval=True, render=False)
         # score_eval, _ = run_episode(env, agents, eval=True)
         scores.append(score)
         # scores_eval.append(score_eval)
@@ -80,6 +81,8 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
         times.append(t)
         logger.info("time_elapsed:"+str(t))
         logger.info("score:"+str(score))
+        logger.info("score_greedy:"+str(score2))
+
         step_tot += step
         steps.append(step_tot)
         logger.info("step_tot:"+str(step_tot))
@@ -120,9 +123,9 @@ if __name__ == '__main__':
     env = EnvWrapper("gym", name)
     # env.env.render()
     # execution loop
-    n_runs = 1
+    n_runs = 5
     logdata = dict()
-    logfile = "./logs/cheetah_wrong_test"
+    logfile = "./logs/cheetah_greedy"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -139,19 +142,19 @@ if __name__ == '__main__':
                 #
                 par = get_hyperpar(name, alg="model40")
                 agent_kwargs = {"hyperpar": par}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
                 p.dump(logdata, open(logfile, "wb"))
                 
-                par = get_hyperpar(name, alg="model")
-                agent_kwargs = {"hyperpar": par}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
-                p.dump(logdata, open(logfile, "wb"))
-
+                # par = get_hyperpar(name, alg="model")
+                # agent_kwargs = {"hyperpar": par}
+                # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
+                # p.dump(logdata, open(logfile, "wb"))
+                #
 
 
             par = get_hyperpar(name, alg="SAC")
             agent_kwargs = {"hyperpar": par}
-            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
+            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
 
                 #
                 # agent_kwargs = {"n_steps": steps, "use_model": False}
