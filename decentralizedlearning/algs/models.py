@@ -14,9 +14,12 @@ class EnsembleModel(nn.Module):
         self.monitor_losses = monitor_losses
         self.use_stochastic = use_stochastic
         self.name = name
+        self.n_models = n_models
+        self.n_elites = 5
         if monitor_losses:
             self.logger = logging.getLogger('root')
         self.models = nn.ModuleList([Model(input_dim, hidden_dims, obs_dim, use_stochastic=use_stochastic) for i in range(n_models)])
+        self.elites = [self.models[i] for i in range(self.n_elites)]
 
     def termination_fn(self, next_obs, action):
         if self.name == "Hopper-v2":
@@ -31,6 +34,15 @@ class EnsembleModel(nn.Module):
     def forward(self, observation, action):
         x = torch.cat([observation, action], dim=-1)
         model_outs = [model(x) for model in self.models]
+        o_next_pred, r_pred = (zip(*model_outs))
+        o_next_pred = [torch.stack(item) for item in zip(*o_next_pred)]
+        o_next_pred[0] = observation + o_next_pred[0]
+        r_pred = [torch.stack(item) for item in zip(*r_pred)]
+        return o_next_pred, r_pred
+
+    def forward_elites(self, observation, action):
+        x = torch.cat([observation, action], dim=-1)
+        model_outs = [model(x) for model in self.elites]
         o_next_pred, r_pred = (zip(*model_outs))
         o_next_pred = [torch.stack(item) for item in zip(*o_next_pred)]
         o_next_pred[0] = observation + o_next_pred[0]
@@ -79,12 +91,17 @@ class EnsembleModel(nn.Module):
             mu_r = r_pred[0]
 
             if self.use_stochastic:
+                l1 = torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),
+                                                     ((mu_r - target_r) * (mu_r - target_r))), dim=-1),
+                                          dim=(-1, -2))
+                #l1 = torch.mean(l1)
                 loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
                 loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
             else:
                 loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
                 loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
-        return loss1, loss2
+        #return loss1, loss2
+        return l1
 
     def train_models(self, optim, buffer, holdout=0.2):
         batch_size = 256
@@ -92,24 +109,36 @@ class EnsembleModel(nn.Module):
         epoch_iter = range(1000)#itertools.count()
         grad_steps = 0
         stop_count = 0
-        loss_o, loss_r = self.get_mse_losses(buff_val.get_all())
-        sum_loss = loss_o + loss_r
-        best = self.state_dict()
+        loss = self.get_mse_losses(buff_val.get_all())
+        sum_loss = loss
+        #best = self.state_dict()
+        best = [model.state_dict() for model in self.models]
         for epoch in epoch_iter:
             for batch_num in range(int(len(buff_train)/batch_size)):
                 self.update_step(optim, buff_train.sample_tensors(n=batch_size))
                 grad_steps += 1
-            loss_o, loss_r = self.get_mse_losses(buff_val.get_all())
-            self.logger.info("Loss_mod:"+str((loss_o + loss_r).item()))
-            if sum_loss > loss_o + loss_r:
-                sum_loss = loss_o + loss_r
+            loss = self.get_mse_losses(buff_val.get_all())
+            self.logger.info("Loss_mod:"+str((loss)))
+            improved = False
+            for i_model in range(self.n_models):
+                if (sum_loss[i_model] - loss[i_model])/sum_loss[i_model] > 0.01:
+                    sum_loss[i_model] = loss[i_model]
+                    best[i_model] = self.models[i_model].state_dict()
+                    improved = True
+            if improved:
                 stop_count = 0
-                best = self.state_dict()
             else:
                 stop_count += 1
-            if stop_count >= 10:
+            if stop_count >= 5:
                 break
-        self.load_state_dict(best)
+        for model, best_model in zip(self.models, best):
+            model.load_state_dict(best_model)
+        self.elites = []
+        for i in range(self.n_elites):
+            idx = torch.argmin(sum_loss)
+            self.elites.append(self.models[idx])
+            sum_loss[idx] = 9999.
+        # self.load_state_dict(best)
         self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))
         return
 
@@ -174,8 +203,8 @@ class EnsembleModel(nn.Module):
                 #else:
                 #    o = new_o_ret
                 #    a = actor(o, greedy=False)
-            n_models = len(self.models)
-            o_next_pred, r_pred = self(o, a)
+            n_models = len(self.elites)
+            o_next_pred, r_pred = self.forward_elites(o, a)
             mu_o = o_next_pred[0]
             log_var_o = o_next_pred[1]
             mu_r = r_pred[0]

@@ -3,11 +3,12 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["test.log", "cheetah_wrong_test.log", "cheetah_wrong_newmod.log"]
+files = ["test.log", "cheetah_wrong_test.log", "cheetah_wrong_newmod.log", "cheetah_greedy.log"]
 
 def update_var(line, var, name, type):
     if name in line:
-        var = type(line[line.find(name+":")+len(name+":"):])
+        if not "greedy" in line:
+            var = type(line[line.find(name+":")+len(name+":"):])
     return var
 
 def moving_average(a, n=50) :
