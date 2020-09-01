@@ -224,7 +224,7 @@ class SAC:
         if self.step_i > self.par.step_random:
             action = self.select_action(o, "noisy")
         else:
-            action = self.select_action(o, "noisy")
+            action = self.select_action(o, "random")
 
         self.o_old = o
         if action.size() == torch.Size([]):

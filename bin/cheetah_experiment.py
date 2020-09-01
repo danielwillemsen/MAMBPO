@@ -125,7 +125,7 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 5
     logdata = dict()
-    logfile = "./logs/cheetah_greedy"
+    logfile = "./logs/cheetah_greedy_uniform"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
