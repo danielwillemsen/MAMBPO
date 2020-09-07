@@ -7,10 +7,14 @@ sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/environme
 import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
-from waypoints import WaypointsEnv
-from crossing import CrossingEnv
+try:
+    from waypoints import WaypointsEnv
+    from crossing import CrossingEnv
+    from continuouscrossing import ContinuousCrossingEnv
+except:
+    print("Importing failed")
+
 import numpy as np
-from continuouscrossing import ContinuousCrossingEnv
 from gym import wrappers
 
 class EnvWrapper:
@@ -51,7 +55,7 @@ class EnvWrapper:
             #    self.action_type = "continuous"
         if suite == "custom":
             namedict = {"waypoints.py": WaypointsEnv, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
-            self.env = namedict[env_name]()
+            self.env = namedict[env_name](**kwargs)
             self.n_agents = self.env.n
             self.action_space = self.env.action_space
             self.observation_space = self.env.observation_space

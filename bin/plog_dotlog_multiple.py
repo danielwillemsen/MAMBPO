@@ -3,7 +3,12 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["cheetah_greedy.log"]
+files = ["hopper_greedy_uniform.log"]
+
+def find_nearest(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
 
 def update_var(line, var, name, type):
     if name in line:
@@ -104,7 +109,7 @@ for file in files:
 #         plt.plot(agent["steps"], moving_average(np.asarray(agent["score"]),1), label=name[0:25])
 plt.xlim([0.,50000.])
 #plot original reults
-tasks = ["cheetah"]
+tasks = ["hopper"]
 algorithms = ['mbpo']
 
 colors = {
@@ -125,19 +130,38 @@ for task in tasks:
         ## plot error bars
         plt.fill_between(data['x']*1000, data['y']-data['std'], data['y']+data['std'], color=colors[alg], alpha=0.25)
 
+steps_list = [i for i in range(0, 50000, 100)]
 for name, agent in data2.items():
     if len(agent[-1]["ep"]) < 50:
         del agent[-1]
     if type(agent) == list:
-        score_lists = [np.array(run["score"]) for run in agent]
+
+        # Do interpolation
+        score_lists = []
+        for run in agent:
+            score_lists.append([])
+            for step in steps_list:
+                score_lists[-1].append(run["score"][find_nearest(run["steps"],step)])
+            score_lists[-1] = np.array(score_lists[-1])
+        # If not interpolation
+
+        # score_lists = [np.array(run["score"]) for run in agent]
+
+        # Always
         mean_scores = np.mean(score_lists, axis=0)
         std_scores = np.std(score_lists, axis=0)
         if "True" in name:
             label = "mbpo"
         else:
             label = "SAC"
-        plt.plot(agent[0]["steps"], mean_scores, label=label + " (ours)")
-        plt.fill_between(agent[0]["steps"], mean_scores-std_scores, mean_scores+std_scores, alpha=0.25)
+
+        # Do interpolation
+        plt.plot(steps_list, mean_scores, label=label + " (ours)")
+        plt.fill_between(steps_list, mean_scores-std_scores, mean_scores+std_scores, alpha=0.25)
+
+        #Else:
+        # plt.plot(agent[0]["steps"], mean_scores, label=label + " (ours)")
+        # plt.fill_between(agent[0]["steps"], mean_scores-std_scores, mean_scores+std_scores, alpha=0.25)
 
 plt.legend()
 plt.xlabel("Real environment steps")

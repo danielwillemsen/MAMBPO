@@ -1,6 +1,6 @@
 import numpy as np
 from gym import spaces
-# from gym.envs.classic_control import rendering
+from gym.envs.classic_control import rendering
 
 
 class Agent:
@@ -24,19 +24,22 @@ class Target:
 
 
 class CrossingEnv():
-    def __init__(self, n=6):
+    def __init__(self, n=4, **kwargs):
         self.dt = 0.05
-        self.n_closest = 2
+        self.n_closest = 3
         self.max_o = np.ones(2 + 2*self.n_closest)
         self.max_a = np.ones(2)
         self.n = n
         self.i_step = 0
-        self.max_step = 50
+        self.max_step = 200
         self.viewer = None
         self.action_space = [spaces.Box(low=-self.max_a, high=self.max_a, shape = (2,)) for i in range(n)]
         self.observation_space = [spaces.Box(low=self.max_o*0, high=self.max_o, shape=(2 + 2*self.n_closest,)) for i in range(n)]       
         self.agents = [Agent(pos=np.array([float((i+1)%2), float(i)/(self.n)])) for i in range(self.n)]
         self.targets = [i % 2 for i in range(n)]
+
+    def seed(self, **kwargs):
+        return
 
     def step(self, a: list):
         self.i_step += 1

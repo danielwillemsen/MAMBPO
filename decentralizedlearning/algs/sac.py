@@ -151,12 +151,15 @@ class SAC:
         if self.par.use_OU:
             self.ou.reset()
 
-    def step(self, o, r, eval=False, done=False, generate_val_data=False):
+    def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True):
         o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
         # self.logger.info(done)
         if eval:
             # Select greedy action and return
-            action = self.select_action(o, "greedy")
+            if greedy_eval:
+                action = self.select_action(o, "greedy")
+            else:
+                action = self.select_action(o, "noisy")
             return action.detach().cpu().numpy()
 
         if generate_val_data:
@@ -185,9 +188,9 @@ class SAC:
                 if self.par.monitor_losses and self.step_i % (250) == 0:
                     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
                     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
-                    self.logger.info("alpha:"+str(self.alpha))
                     print(len(self.fake_buffer))
-
+        if self.par.monitor_losses and self.step_i %(250) == 0:
+            self.logger.info("alpha:" + str(self.alpha))
 
         if self.step_i % self.par.update_every_n_steps == 0:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
