@@ -118,14 +118,14 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "HalfCheetah-v2"
+    name = "Hopper-v2"
 
     env = EnvWrapper("gym", name)
     # env.env.render()
     # execution loop
     n_runs = 5
     logdata = dict()
-    logfile = "./logs/cheetah_greedy"
+    logfile = "./logs/hopper_greedy_uniform"
     logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -140,7 +140,7 @@ if __name__ == '__main__':
             p.dump(logdata, open(logfile, "wb"))
             for steps in [40]:
                 #
-                par = get_hyperpar(name, alg="model40")
+                par = get_hyperpar("HalfCheetah-v2", alg="model40")
                 agent_kwargs = {"hyperpar": par}
                 single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
                 p.dump(logdata, open(logfile, "wb"))
@@ -152,7 +152,7 @@ if __name__ == '__main__':
                 #
 
 
-            par = get_hyperpar(name, alg="SAC")
+            par = get_hyperpar("HalfCheetah-v2", alg="SAC")
             agent_kwargs = {"hyperpar": par}
             single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000)
 
