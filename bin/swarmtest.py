@@ -1,6 +1,7 @@
 import pickle as p
 import time
-import os,sys
+import os, sys
+
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
@@ -18,40 +19,44 @@ from decentralizedlearning.algs.configs.config_cheetah import get_hyperpar
 import logging
 import matplotlib.pyplot as plt
 
+
 def scale_action(env, agent_id, action):
-    return (env.action_space[agent_id].high-env.action_space[agent_id].low)*action*0.5
+    return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
 
 
-def run_episode(env, agents, eval=False,render=False, generate_val_data=False, steps=1000):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, steps=1000):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
     done_n = [False for i in range(len(agents))]
-    #Start env
+    # Start env
     for i in range(steps):
         # query for action from each agent's policy
         act_n = []
         for j, agent in enumerate(agents):
-            action = scale_action(env, j, agent.step(obs_n[j], reward_n[j],  done=done_n[j], eval=eval, generate_val_data=generate_val_data))
+            action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
+                                                     generate_val_data=generate_val_data))
             act_n.append(action)
         # step environment
         obs_n, reward_n, done_n, _ = env.step(act_n)
-        
+
         for j, r in enumerate(reward_n):
             reward_tot[j] += r
         if done_n[0]:
             for j, agent in enumerate(agents):
-                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval, generate_val_data=generate_val_data))
+                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
+                                                         generate_val_data=generate_val_data))
                 act_n.append(action)
                 agent.reset()
-            print("Episode finished after {} timesteps".format(i+1))
+            print("Episode finished after {} timesteps".format(i + 1))
             break
         # render all agent views
         if eval or render:
             env.render()
     for j, agent in enumerate(agents):
         agent.reset()
-    return reward_tot, i+1
+    return reward_tot, i + 1
+
 
 def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
     logger = logging.getLogger('root')
@@ -68,8 +73,8 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
 
     for i in ep_generator:
-        logger.info("episode:"+str(i))
-        if i%2 == 0:
+        logger.info("episode:" + str(i))
+        if i % 2 == 0:
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
         score, step = run_episode(env, agents, render=False)
         # score_eval, _ = run_episode(env, agents, eval=True)
@@ -77,33 +82,38 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
         # scores_eval.append(score_eval)
         t = time.time() - time_start
         times.append(t)
-        logger.info("time_elapsed:"+str(t))
-        logger.info("score:"+str(score))
+        logger.info("time_elapsed:" + str(t))
+        logger.info("score:" + str(score))
+        for it, val in enumerate(score):
+            logger.info("score_agent" + str(it) + ":" + str(val))
         step_tot += step
         steps.append(step_tot)
-        logger.info("step_tot:"+str(step_tot))
+        logger.info("step_tot:" + str(step_tot))
         if n_steps and step_tot > n_steps:
             break
         # logger.info("score_eval:"+str(score_eval))
     return {"scores": scores, "steps": steps, "scores_eval": scores_eval, "times": times}
 
+
 def single_run(env, agent_fn, logdata, seed, agent_kwargs=dict(), n_episodes=None, n_steps=None):
     logger = logging.getLogger(__name__)
     name = agent_fn.__name__ + str(agent_kwargs)
-    logger.info("agent:"+name)
+    logger.info("agent:" + name)
     env.env.seed(seed=seed)
     if name not in logdata:
         logdata[name] = []
-    #env.render()
+    # env.render()
     obs_n = env.reset()
     agents = []
     for i in range(env.n_agents):
         agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
     logdata[name].append(train(env, agents, n_episodes=n_episodes, n_steps=n_steps, generate_val_data=True))
-    #env.close()
+    # env.close()
+
 
 if __name__ == '__main__':
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--suite', type=str, default="gym", help='Environment Suite to use')
     parser.add_argument('--name', type=str, default="Pendulum-v0", help='Environment name to use')
@@ -114,15 +124,15 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "HalfCheetahBulletEnv-v0"
+    name = "waypoints.py"
 
-    env = EnvWrapper("gym", name)
+    env = EnvWrapper("custom", name)
     # env.env.render()
     # execution loop
-    n_runs = 5
+    n_runs = 1
     logdata = dict()
-    logfile = "./logs/cheetah_largetest"
-    logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
+    logfile = "./logs/swarm_partial_nocol_server_mod"
+    logging.basicConfig(filename=logfile + ".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
 
@@ -130,28 +140,25 @@ if __name__ == '__main__':
     logger.addHandler(handler)
     if True:
         for run in range(n_runs):
-            logger.info("run:"+str(run))
-            agent_fn = SAC
-            par = get_hyperpar("HalfCheetah-v2", alg="SAC")
-            agent_kwargs = {"hyperpar": par}
-
-            #single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
-            #p.dump(logdata, open(logfile, "wb"))
-            for steps in [40]:
-
-                #
-                par = get_hyperpar("HalfCheetah-v2", alg="model")
+            logger.info("run:" + str(run))
+            for n_agent in [1, 2, 4, 8, 16]:
+                logger.info("n_agents:" + str(n_agent))
+                env = EnvWrapper("custom", name, n_agents=n_agent)
+                agent_fn = SAC
+                par = get_hyperpar("custom", alg="model")
                 agent_kwargs = {"hyperpar": par}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
-                p.dump(logdata, open(logfile, "wb"))
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=20000)
+            # p.dump(logdata, open(logfile, "wb"))
+            # for steps in [40]:
+            #     #
+            #     par = get_hyperpar("HalfCheetah-v2", alg="model")
+            #     agent_kwargs = {"hyperpar": par}
+            #     single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
+            #     p.dump(logdata, open(logfile, "wb"))
                 #
                 # agent_kwargs = {"n_steps": steps, "use_model": False}
                 # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
                 # p.dump(logdata, open(logfile, "wb"))
-
-
-
-
 
                 # agent_kwargs = {"n_steps": steps, "use_model": True, "diverse": False}
                 # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=250)
