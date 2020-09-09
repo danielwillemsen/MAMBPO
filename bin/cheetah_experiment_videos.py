@@ -123,16 +123,18 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "HalfCheetah-v2"
+    name = "Hopper-v2"
 
     env = EnvWrapper("gym", name)
-    record_env = EnvWrapper("gym-record", name, video_dir_name=)
     # env.env.render()
     # execution loop
     n_runs = 5
     logdata = dict()
-    logfile = "./logs/cheetah_vidtest"
-    logging.basicConfig(filename=logfile+".log", filemode='w', level=logging.DEBUG)
+    logpath = "./logs/"
+    logname = "hopper_vidtest"
+    logfile = logpath + logname
+
+    logging.basicConfig(filename=logpath+logname+".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
 
@@ -141,20 +143,30 @@ if __name__ == '__main__':
     if True:
         for run in range(n_runs):
             logger.info("run:"+str(run))
+
             agent_fn = SAC
 
-            par = get_hyperpar(name, alg="SAC")
-            agent_kwargs = {"hyperpar": par}
-            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000, record_env=record_env)
-
-            p.dump(logdata, open(logfile, "wb"))
             for steps in [40]:
                 #
-                par = get_hyperpar(name, alg="model40")
+                algname = "model"
+                par = get_hyperpar(name, alg=algname)
                 agent_kwargs = {"hyperpar": par}
-                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=50000, record_env=record_env)
+                record_env = EnvWrapper("gym-record", name, video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
+                single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000, record_env=record_env)
+                record_env.close()
+
                 p.dump(logdata, open(logfile, "wb"))
-                
+
+            algname = "SAC"
+            par = get_hyperpar(name, alg=algname)
+            agent_kwargs = {"hyperpar": par}
+            record_env = EnvWrapper("gym-record", name,
+                                    video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
+            single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000,
+                       record_env=record_env)
+            record_env.close()
+            p.dump(logdata, open(logfile, "wb"))
+
                 # par = get_hyperpar(name, alg="model")
                 # agent_kwargs = {"hyperpar": par}
                 # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)

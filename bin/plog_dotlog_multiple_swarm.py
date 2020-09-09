@@ -3,7 +3,7 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["blabla.log"]
+files = ["swarm_partial_nocol_server.log"]#, "swarm_partial.log"]
 
 def update_var(line, var, name, type):
     if name+":" in line:
@@ -63,14 +63,18 @@ for file in files:
                 if model_str in line:
                     print(line)
                     agent = model_str+str(n_agents)
-                    if agent in data.keys():
+                    if agent in data.keys() and False:
                         if type(data[agent]) is dict:
                             data[agent] = [data[agent]]
                         data[agent].append({"ep": [], "time": [], "score":[], "test_loss_r":[], "train_loss_r":[],
                                        "test_loss_o":[], "train_loss_o":[], "steps":[], "score_agent":[[] for agent in range(n_agents)]})
+                        score_agents = ["" for agent in range(n_agents)]
+
                     else:
                         data[agent] = {"ep": [], "time": [], "score":[], "test_loss_r":[], "train_loss_r":[],
                                        "test_loss_o":[], "train_loss_o":[], "steps":[], "score_agent":[[] for agent in range(n_agents)]}
+                        score_agents = ["" for agent in range(n_agents)]
+
                 time = update_var(line, time, "time_elapsed", float)
                 score = update_var(line, score, "score", str)
                 test_loss_r = update_var(line, test_loss_r, "test_loss_r", str)

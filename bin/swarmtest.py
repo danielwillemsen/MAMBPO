@@ -76,7 +76,7 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
         logger.info("episode:" + str(i))
         if i % 2 == 0:
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
-        score, step = run_episode(env, agents, render=True)
+        score, step = run_episode(env, agents, render=False)
         # score_eval, _ = run_episode(env, agents, eval=True)
         scores.append(score)
         # scores_eval.append(score_eval)
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 1
     logdata = dict()
-    logfile = "../logs/swarm_partial_nocol"
+    logfile = "./logs/swarm_partial_nocol_server_mod"
     logging.basicConfig(filename=logfile + ".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
@@ -145,7 +145,7 @@ if __name__ == '__main__':
                 logger.info("n_agents:" + str(n_agent))
                 env = EnvWrapper("custom", name, n_agents=n_agent)
                 agent_fn = SAC
-                par = get_hyperpar("custom", alg="SAC")
+                par = get_hyperpar("custom", alg="model")
                 agent_kwargs = {"hyperpar": par}
                 single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=20000)
             # p.dump(logdata, open(logfile, "wb"))

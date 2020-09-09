@@ -7,8 +7,9 @@ sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/environme
 import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
+from waypoints import WaypointsEnv
+
 try:
-    from waypoints import WaypointsEnv
     from crossing import CrossingEnv
     from continuouscrossing import ContinuousCrossingEnv
 except:
@@ -38,11 +39,12 @@ class EnvWrapper:
         assert suite in supported_suites, "Suite should be in {} but was {}".format(str(supported_suites), suite)
         self.suite = suite
         self.wrapped_env = None
+        video_dir_name = str(kwargs.get("video_dir_name", "./logs/videos/"))
         # Setup environment for "gym" suite.
         if suite =="gym-record":
             env = gym.make(env_name)
             self.wrapped_env = env
-            self.env = wrappers.Monitor(env, './logs/videos', force=True, video_callable=lambda episode_id: True)
+            self.env = wrappers.Monitor(env, video_dir_name, force=True, video_callable=lambda episode_id: True)
             self.n_agents = 1
             self.observation_space = [self.env.observation_space]
             self.action_space = [self.env.action_space]
@@ -54,7 +56,9 @@ class EnvWrapper:
             # if self.env.action_space.dtype == dtype('float32'):
             #    self.action_type = "continuous"
         if suite == "custom":
-            namedict = {"waypoints.py": WaypointsEnv, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
+            #namedict = {"waypoints.py": WaypointsEnv, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
+            namedict = {"waypoints.py": WaypointsEnv}#, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
+
             self.env = namedict[env_name](**kwargs)
             self.n_agents = self.env.n
             self.action_space = self.env.action_space

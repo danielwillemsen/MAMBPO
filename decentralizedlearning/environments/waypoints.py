@@ -1,7 +1,9 @@
 import numpy as np
 from gym import spaces
-from gym.envs.classic_control import rendering
-
+try:
+    from gym.envs.classic_control import rendering
+except:
+    pass
 
 class Agent:
     def __init__(self):
@@ -66,7 +68,7 @@ class WaypointsEnv():
             # Collissions
             for agent2 in self.agents:
                 if agent2 is not agent and np.linalg.norm(agent2.pos - agent.pos)<0.10:
-                    rewards[i] -= 1.0
+                    rewards[i] -= 0.0
                     # print("Collision!")
             if self.i_step % 50 == 0:
                 for target in self.targets:
@@ -112,35 +114,37 @@ class WaypointsEnv():
 
     def seed(self, **kwargs):
         pass
+    try:
+        def render(self):
+            if self.viewer is None:
+                self.viewer = rendering.Viewer(500, 500)
+                self.viewer.set_bounds(0.,1.,0.,1.)
+                self.transforms = []
+                self.target_transforms = []
+                col = 0
+                for agent, target in zip(self.agents, self.targets):
+                    circle = rendering.make_circle(0.05)
+                    circle.set_color(0,col+0,0)
+                    self.viewer.add_geom(circle)
+                    transform = rendering.Transform()
+                    self.transforms.append(transform)
+                    circle.add_attr(transform)
+                    circle = rendering.make_circle(0.15)
+                    circle.set_color(0.5,col+0.5,0.5)
+                    self.viewer.add_geom(circle)
+                    transform = rendering.Transform()
+                    self.target_transforms.append(transform)
+                    circle.add_attr(transform)
+                    col+=0.3
+            for target, transform in zip(self.targets, self.target_transforms):
+                transform.set_translation(target.pos[0], target.pos[1])
 
-    def render(self):
-        if self.viewer is None:
-            self.viewer = rendering.Viewer(500, 500)
-            self.viewer.set_bounds(0.,1.,0.,1.)
-            self.transforms = []
-            self.target_transforms = []
-            col = 0
-            for agent, target in zip(self.agents, self.targets):
-                circle = rendering.make_circle(0.05)
-                circle.set_color(0,col+0,0)
-                self.viewer.add_geom(circle)
-                transform = rendering.Transform()
-                self.transforms.append(transform)
-                circle.add_attr(transform)
-                circle = rendering.make_circle(0.15)
-                circle.set_color(0.5,col+0.5,0.5)
-                self.viewer.add_geom(circle)
-                transform = rendering.Transform()
-                self.target_transforms.append(transform)
-                circle.add_attr(transform)
-                col+=0.3
-        for target, transform in zip(self.targets, self.target_transforms):
-            transform.set_translation(target.pos[0], target.pos[1])
+            for agent, transform in zip(self.agents, self.transforms):
+                transform.set_translation(agent.pos[0], agent.pos[1])
 
-        for agent, transform in zip(self.agents, self.transforms):
-            transform.set_translation(agent.pos[0], agent.pos[1])
-
-        return self.viewer.render()
+            return self.viewer.render()
+    except:
+        pass
 
     def close(self):
         pass
