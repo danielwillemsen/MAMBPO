@@ -103,6 +103,26 @@ class EnsembleModel(nn.Module):
         #return loss1, loss2
         return l1
 
+    def step_single(self, observation, action):
+        o = torch.tensor(observation, device=self.device)
+        a = torch.tensor(action, device=self.device)
+        o_next_pred, r_pred = self.forward_elites(o, a)
+        mu_o = o_next_pred[0]
+        mu_r = r_pred[0]
+        log_var_o = o_next_pred[1]
+        log_var_r = r_pred[1]
+        new_o = torch.normal(mu_o, torch.exp(0.5 * log_var_o))
+        r = torch.normal(mu_r, torch.exp(0.5 * log_var_r))
+
+        model_i = random.randint(0, self.n_elites-1)
+        new_o = new_o[model_i]
+        r = r[model_i]
+
+        return new_o.detach().cpu().numpy(), r.detach().cpu().numpy()
+
+
+
+
     def train_models(self, optim, buffer, holdout=0.2):
         batch_size = 256
         buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
