@@ -104,8 +104,8 @@ class EnsembleModel(nn.Module):
         return l1
 
     def step_single(self, observation, action):
-        o = torch.tensor(observation, device=self.device)
-        a = torch.tensor(action, device=self.device)
+        o = torch.tensor(observation, device=self.device, dtype=torch.float)
+        a = torch.tensor(action, device=self.device, dtype=torch.float)
         o_next_pred, r_pred = self.forward_elites(o, a)
         mu_o = o_next_pred[0]
         mu_r = r_pred[0]

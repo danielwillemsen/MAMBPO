@@ -41,7 +41,7 @@ class SACHyperPar:
         self.f_hyst = float(kwargs.get("f_hyst", 1.0))
         self.use_model = bool(kwargs.get("use_model", False))
         self.monitor_losses = bool(kwargs.get("monitor_losses", True))
-        self.use_model_stochastic = bool(kwargs.get("use_model_stochastic", False))
+        self.use_model_stochastic = bool(kwargs.get("use_model_stochastic", True))
         self.diverse = bool(kwargs.get("diverse", True))
         self.autotune = bool(kwargs.get("autotune", True))
         self.target_entropy = float(kwargs.get("target_entropy", -0.05))
@@ -110,6 +110,9 @@ class SAC:
                                                     lr=self.par.lr_model,
                                                     amsgrad=True,
                                                     weight_decay=self.par.l2_norm)
+        else:
+            self.model = None
+
         # Initialize 2 critics
         self.critics = []
         self.critics_target = []
@@ -129,11 +132,11 @@ class SAC:
         if self.par.use_OU:
             self.ou = OUNoise(action_dim)
 
-        self.real_buffer = ReplayBuffer(batch_size=self.par.batch_size, device=self.device)
+        self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
         if self.par.monitor_losses:
             self.val_buffer = ReplayBuffer(batch_size=500, device=self.device)
         if self.par.use_model:
-            self.fake_buffer = ReplayBuffer(size=self.par.update_steps*self.par.update_every_n_steps*self.par.batch_size*2*self.par.rollout_length, batch_size=self.par.batch_size, device=self.device)
+            self.fake_buffer = ReplayBuffer(size=self.par.update_steps*self.par.update_every_n_steps*self.par.batch_size*8*self.par.rollout_length, batch_size=self.par.batch_size, device=self.device)
             self.ac_buffer = self.fake_buffer
         else:
             self.ac_buffer = self.real_buffer
@@ -196,7 +199,7 @@ class SAC:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    batch_this_epoch = self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*2
+                    batch_this_epoch = self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
                     fake_samples = self.model.generate_efficient(self.real_buffer.sample_tensors(n=batch_this_epoch), self.actor,
                                                                  diverse=self.par.diverse,
                                                                  batch_size=batch_this_epoch)  # self.par.batch_size)

@@ -3,7 +3,8 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["swarm_partial_nocol_server.log"]#, "swarm_partial.log"]
+files = ["swarm_partial.log"]
+#["swarm_partial_nocol_server.log", "swarm_partial_nocol_server_mod.log"]#, "swarm_partial.log"]
 
 def update_var(line, var, name, type):
     if name+":" in line:
@@ -157,12 +158,22 @@ data2 = data
 #         ## plot error bars
 #         plt.fill_between(data['x']*1000, data['y']-data['std'], data['y']+data['std'], color=colors[alg], alpha=0.25)
 
+set_done = False
 for name, agent in data.items():
     # Calculate mean
     dat = [np.mean(items) for items in zip(*data[name]["score_agent"])]
-    plt.plot(dat, label=name)
+    if "False" in name:
+        plt.plot(data[name]["steps"], dat, label=name[name.find("False")+5:] + " Agents (SAC)", linestyle="-")
+    else:
+        if not set_done:
+            plt.gca().set_prop_cycle(None)
+            set_done = True
+        plt.plot(data[name]["steps"], dat, label=name[name.find("True") + 4:] + " Agents (MBPO)", marker="*")
+
     # for i in range(len(data[name]["score_agent"])):
     #     plt.plot(data[name]["score_agent"][i], label=name + str(i))
+plt.xlabel("Real environment steps")
+plt.ylabel("Score")
 plt.legend()
 plt.show()
 

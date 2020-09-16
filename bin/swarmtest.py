@@ -15,7 +15,6 @@ from decentralizedlearning.algs.td3 import TD3
 from decentralizedlearning.algs.modelbased import ModelAgent
 from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.algs.configs.config_cheetah import get_hyperpar
-
 import logging
 import matplotlib.pyplot as plt
 
@@ -76,7 +75,7 @@ def train(env, agents, n_episodes=10000, n_steps=None, generate_val_data=False):
         logger.info("episode:" + str(i))
         if i % 2 == 0:
             score, _ = run_episode(env, agents, eval=False, generate_val_data=True)
-        score, step = run_episode(env, agents, render=False)
+        score, step = run_episode(env, agents, render=True)
         # score_eval, _ = run_episode(env, agents, eval=True)
         scores.append(score)
         # scores_eval.append(score_eval)
@@ -131,17 +130,19 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 1
     logdata = dict()
-    logfile = "./logs/swarm_partial_nocol_server_mod"
+    logfile = "../logs/testttt"
     logging.basicConfig(filename=logfile + ".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
 
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
+
+
     if True:
         for run in range(n_runs):
             logger.info("run:" + str(run))
-            for n_agent in [1, 2, 4, 8, 16]:
+            for n_agent in [2, 4, 8, 16]:
                 logger.info("n_agents:" + str(n_agent))
                 env = EnvWrapper("custom", name, n_agents=n_agent)
                 agent_fn = SAC

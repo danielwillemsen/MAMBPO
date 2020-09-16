@@ -3,7 +3,7 @@ import numpy as np
 
 #files = ["test.log", "test_smallactor.log", "test_ddpg.log", "test_lr.log", "test_alpha.log"]
 #files = ["test_steps2.log", "test_steps3.log","test_steps4.log","test_steps5.log","test_steps6.log"]
-files = ["hopper_greedy_uniform.log"]
+files = ["hopper_vidtest.log"]
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -12,7 +12,7 @@ def find_nearest(array, value):
 
 def update_var(line, var, name, type):
     if name in line:
-        if not "greedy" in line:
+        if not "greedy" in line or "greedy" in name:
             var = type(line[line.find(name+":")+len(name+":"):])
     return var
 
@@ -33,6 +33,7 @@ for file in files:
         ep = None
         time = None
         score = "[0]"
+        score_greedy = "[0]"
         test_loss_o = "tensorrrr"
         test_loss_r = "tensorrrr"
         train_loss_o = "tensorrrr"
@@ -54,10 +55,10 @@ for file in files:
                         if type(data[agent]) is dict:
                             data[agent] = [data[agent]]
                         data[no_model_str].append({"ep": [], "time": [], "score":[], "test_loss_r":[], "train_loss_r":[],
-                                       "test_loss_o":[], "train_loss_o":[], "steps":[]})
+                                       "test_loss_o":[], "train_loss_o":[], "steps":[], "score_greedy":[]})
                     else:
                         data[no_model_str] = {"ep": [], "time": [], "score":[], "test_loss_r":[], "train_loss_r":[],
-                                       "test_loss_o":[], "train_loss_o":[], "steps":[]}
+                                       "test_loss_o":[], "train_loss_o":[], "steps":[], "score_greedy":[]}
                 if model_str in line:
                     print(line)
                     agent = model_str
@@ -65,12 +66,14 @@ for file in files:
                         if type(data[agent]) is dict:
                             data[agent] = [data[agent]]
                         data[model_str].append({"ep": [], "time": [], "score":[], "test_loss_r":[], "train_loss_r":[],
-                                       "test_loss_o":[], "train_loss_o":[], "steps":[]})
+                                       "test_loss_o":[], "train_loss_o":[], "steps":[], "score_greedy":[]})
                     else:
                         data[model_str] = {"ep": [], "time": [], "score":[], "test_loss_r":[], "train_loss_r":[],
-                                       "test_loss_o":[], "train_loss_o":[], "steps":[]}
+                                       "test_loss_o":[], "train_loss_o":[], "steps":[], "score_greedy":[]}
                 time = update_var(line, time, "time_elapsed", float)
                 score = update_var(line, score, "score", str)
+                score_greedy = update_var(line, score_greedy, "score_greedy", str)
+
                 test_loss_r = update_var(line, test_loss_r, "test_loss_r", str)
                 test_loss_o = update_var(line, test_loss_o, "test_loss_o", str)
                 train_loss_r = update_var(line, train_loss_r, "train_loss_r", str)
@@ -79,6 +82,8 @@ for file in files:
                 if "step_tot" in line and type(data[agent]) is list:
                     data[agent][run]["ep"].append(ep)
                     data[agent][run]["score"].append(float(score[1:-1]))
+                    data[agent][run]["score_greedy"].append(float(score_greedy[1:-1]))
+
                     #data[agent+file]["test_loss_o"].append(float(test_loss_o[7:-18]))
                     #data[agent+file]["train_loss_o"].append(float(train_loss_o[7:-18]))
                     #data[agent+file]["test_loss_r"].append(float(test_loss_r[7:-18]))
@@ -89,6 +94,8 @@ for file in files:
                 elif "step_tot" in line: #not train_loss_r == "tensorrrr" :
                     data[agent]["ep"].append(ep)
                     data[agent]["score"].append(float(score[1:-1]))
+                    data[agent]["score_greedy"].append(float(score_greedy[1:-1]))
+
                     #data[agent+file]["test_loss_o"].append(float(test_loss_o[7:-18]))
                     #data[agent+file]["train_loss_o"].append(float(train_loss_o[7:-18]))
                     #data[agent+file]["test_loss_r"].append(float(test_loss_r[7:-18]))
@@ -107,7 +114,7 @@ for file in files:
 # for name, agent in data.items():
 #     if "ep" in agent.keys() and len(agent["ep"])>0:
 #         plt.plot(agent["steps"], moving_average(np.asarray(agent["score"]),1), label=name[0:25])
-plt.xlim([0.,50000.])
+plt.xlim([0.,100000.])
 #plot original reults
 tasks = ["hopper"]
 algorithms = ['mbpo']
@@ -130,7 +137,7 @@ for task in tasks:
         ## plot error bars
         plt.fill_between(data['x']*1000, data['y']-data['std'], data['y']+data['std'], color=colors[alg], alpha=0.25)
 
-steps_list = [i for i in range(0, 50000, 100)]
+steps_list = [i for i in range(0, 100000, 100)]
 for name, agent in data2.items():
     if len(agent[-1]["ep"]) < 50:
         del agent[-1]
@@ -141,7 +148,7 @@ for name, agent in data2.items():
         for run in agent:
             score_lists.append([])
             for step in steps_list:
-                score_lists[-1].append(run["score"][find_nearest(run["steps"],step)])
+                score_lists[-1].append(run["score_greedy"][find_nearest(run["steps"],step)])
             score_lists[-1] = np.array(score_lists[-1])
         # If not interpolation
 

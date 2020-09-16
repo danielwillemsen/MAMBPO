@@ -1,25 +1,14 @@
-import pickle as p
-import time
-import os, sys
-
-sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
-sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
-sys.path.insert(1, os.path.join(sys.path[0], '../'))
-import pybullet_envs
-import argparse
-import numpy as np
-from envwrapper import EnvWrapper
-import itertools
 from decentralizedlearning.algs.hddpg import HDDPGAgent
 from decentralizedlearning.algs.td3 import TD3
 from decentralizedlearning.algs.modelbased import ModelAgent
 from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.algs.configs.config_cheetah import get_hyperpar
 from decentralizedlearning.data_log import DataLog
-
+import itertools
+import pickle as p
+import time
+import os
 import logging
-import matplotlib.pyplot as plt
-
 
 def scale_action(env, agent_id, action):
     return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
@@ -140,10 +129,8 @@ def generate_statistics(agents, record_env, data_log):
         rews_pred = []
         for step in range(1000):
             rews_real.append(rewards[step][0])
-            logger.info("stat_rew_real:" + str(rewards[step][0]))
             action = actions[step][0]
             observation, rew_predict = agents[0].model.step_single(observation, action)
-            logger.info("stat_rew_predict:" + str(rew_predict[0]))
             rews_pred.append(rew_predict[0])
         data_log.log_var("model_vis", {"real": rews_real, "pred": rews_pred})
 
@@ -182,90 +169,3 @@ def single_run(env, agent_fn, logdata, data_log, seed, agent_kwargs=dict(), n_ep
 
     logdata[name].append(
         train(env, agents, data_log, n_episodes=n_episodes, n_steps=n_steps, generate_val_data=True, record_env=record_env))
-    # env.close()
-
-
-if __name__ == '__main__':
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--suite', type=str, default="gym", help='Environment Suite to use')
-    parser.add_argument('--name', type=str, default="Pendulum-v0", help='Environment name to use')
-    parser.add_argument('--alg', type=str, default="ModelAgent", help='Name of alg to use: hddpg or TD3')
-    args = parser.parse_args()
-    agent_dict = {"HDDPGAgent": HDDPGAgent, "TD3": TD3, "ModelAgent": ModelAgent}
-
-    # Create environment
-    #  "HalfCheetahBulletEnv-v0"
-    # "ReacherBulletEnv-v0"
-    name = "HalfCheetah-v2"
-
-    env = EnvWrapper("gym", name)
-    # env.env.render()
-    # execution loop
-    n_runs = 5
-    logdata = dict()
-    logpath = "./logs/"
-    logname = "cheetah_plotmodel_4layers_3"
-    logfile = logpath + logname
-
-    logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
-    logger = logging.getLogger('root')
-    handler = logging.StreamHandler(sys.stdout)
-
-    handler.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-    name2 = "HalfCheetah-v2"
-
-    data_log = DataLog(logpath, logname)
-
-    if True:
-        for run in range(n_runs):
-            logger.info("run:" + str(run))
-            agent_fn = SAC
-
-            for steps in [40]:
-                #
-                algname = "model"
-                par = get_hyperpar(name2, alg=algname)
-                agent_kwargs = {"hyperpar": par}
-                record_env = EnvWrapper("gym-record", name,
-                                        video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=100000,
-                           record_env=record_env, name=algname)
-                record_env.close()
-
-                p.dump(logdata, open(logfile, "wb"))
-
-
-            algname = "SAC"
-            par = get_hyperpar(name2, alg=algname)
-            agent_kwargs = {"hyperpar": par}
-            record_env = EnvWrapper("gym-record", name,
-                                    video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-            single_run(env, agent_fn, logdata,data_log, run, agent_kwargs=agent_kwargs, n_steps=100000,
-                       record_env=record_env, name=algname)
-            record_env.close()
-            p.dump(logdata, open(logfile, "wb"))
-
-            # par = get_hyperpar(name, alg="model")
-            # agent_kwargs = {"hyperpar": par}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
-            # p.dump(logdata, open(logfile, "wb"))
-            #
-
-            #
-            # agent_kwargs = {"n_steps": steps, "use_model": False}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
-            # p.dump(logdata, open(logfile, "wb"))
-
-            # agent_kwargs = {"n_steps": steps, "use_model": True, "diverse": False}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=250)
-            # p.dump(logdata, open(logfile, "wb"))
-            #
-            # agent_kwargs = {"n_steps": steps, "use_model": True}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=50)
-            # p.dump(logdata, open(logfile, "wb"))
-
-    # except Exception:
-    #     logger.exception("Fatal error.")

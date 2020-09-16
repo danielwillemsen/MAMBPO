@@ -4,7 +4,7 @@ def get_hyperpar(env, alg):
     if env=="HalfCheetah-v2" and alg=="model":
         return SACHyperPar(hidden_dims_actor=(256, 256),
                            hidden_dims_critic=(256, 256),
-                           hidden_dims_model=(200, 200, 200),
+                           hidden_dims_model=(200, 200, 200, 200),
                            gamma=0.99,
                            tau=0.005,
                            lr_actor=0.0003,
@@ -14,7 +14,7 @@ def get_hyperpar(env, alg):
                            step_random=5000,
                            update_every_n_steps=1,
                            update_model_every_n_steps=250,
-                           n_steps=20,
+                           n_steps=40,
                            n_models=10,
                            batch_size=256,
                            weight_decay=0.0,
@@ -25,6 +25,7 @@ def get_hyperpar(env, alg):
                            autotune=True,
                            target_entropy=-3.0,
                            name=env)
+
     if env=="custom" and alg=="SAC":
         return SACHyperPar(hidden_dims_actor=(256, 256),
                            hidden_dims_critic=(256, 256),
@@ -78,7 +79,7 @@ def get_hyperpar(env, alg):
     if env=="HalfCheetah-v2" and alg=="model40":
         return SACHyperPar(hidden_dims_actor=(256, 256),
                            hidden_dims_critic=(256, 256),
-                           hidden_dims_model=(200, 200, 200),
+                           hidden_dims_model=(200, 200, 200, 200),
                            gamma=0.99,
                            tau=0.005,
                            lr_actor=0.0003,
