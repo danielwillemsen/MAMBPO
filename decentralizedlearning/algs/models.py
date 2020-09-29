@@ -49,6 +49,41 @@ class EnsembleModel(nn.Module):
         r_pred = [torch.stack(item) for item in zip(*r_pred)]
         return o_next_pred, r_pred
 
+    def multistep_update_step(self, optim, samples, length):
+        o = samples["o"][:,0,:]
+        loss = 0.
+        for i in range(length):
+            o_next_pred, r_pred = self(o, samples["a"][:,i,:])
+            target_o = samples["o_next"][:,i]
+            target_r = samples["r"][:,i].unsqueeze(-1)
+
+            log_var_o = o_next_pred[1]
+            log_var_r = r_pred[1]
+            inv_var_o = torch.exp(-log_var_o)
+            inv_var_r = torch.exp(-log_var_r)
+            mu_o = o_next_pred[0]
+            mu_r = r_pred[0]
+
+            if self.use_stochastic:
+                l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
+                l2 = torch.sum(torch.mean(torch.cat((log_var_o, log_var_r), dim=-1),dim=(-1,-2)))
+                #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
+                #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
+                #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
+            else:
+                loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
+                loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
+                loss3 = 0.
+            loss += (l1+l2)*0.1
+            randomlist = random.choices(range(0, self.n_models), k=256)
+            idx = [i for i in range(256)]
+            new_o = torch.normal(mu_o, torch.exp(0.5 * log_var_o))
+            o = new_o[randomlist, idx, :]
+
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+        
     def update_step(self, optim, samples):
         o_next_pred, r_pred = self(samples["o"], samples["a"])
         target_o = samples["o_next"]
@@ -123,7 +158,7 @@ class EnsembleModel(nn.Module):
 
 
 
-    def train_models(self, optim, buffer, holdout=0.2):
+    def train_models(self, optim, buffer, holdout=0.2, multistep_buffer=None):
         batch_size = 256
         buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
         epoch_iter = range(1000)#itertools.count()
@@ -136,6 +171,10 @@ class EnsembleModel(nn.Module):
         for epoch in epoch_iter:
             for batch_num in range(int(len(buff_train)/batch_size)):
                 self.update_step(optim, buff_train.sample_tensors(n=batch_size))
+                if multistep_buffer:
+                    self.multistep_update_step(optim,
+                                               multistep_buffer.sample_tensors(n=batch_size),
+                                               multistep_buffer.length)
                 grad_steps += 1
             loss = self.get_mse_losses(buff_val.get_all())
             self.logger.info("Loss_mod:"+str((loss)))
@@ -213,32 +252,34 @@ class EnsembleModel(nn.Module):
     def generate_efficient(self, samples, actor, diverse=True, batch_size=128, rollout_length=1):
         ret_samples = []
         with torch.no_grad():
-            #for i in range(rollout_length):
-                #if i == 0:
-            o = samples["o"]
-            if not diverse:
-                a = samples["a"] #actor(o, greedy=False)
-            else:
-                a = actor(o, greedy=False)
-                #else:
-                #    o = new_o_ret
-                #    a = actor(o, greedy=False)
-            n_models = len(self.elites)
-            o_next_pred, r_pred = self.forward_elites(o, a)
-            mu_o = o_next_pred[0]
-            log_var_o = o_next_pred[1]
-            mu_r = r_pred[0]
-            log_var_r = r_pred[1]
-            ret_samples = []
-            idx = [i for i in range(batch_size)]
-            randomlist = random.choices(range(n_models), k=batch_size)
-            if self.use_stochastic:
-                new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
-                r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
-            new_o_ret = new_o[randomlist, idx, :]
-            done = samples["done"]
-            #done = self.termination_fn(new_o_ret, a)
-            ret_samples.append((o, a, r[randomlist, idx, :].squeeze(-1), new_o_ret, done))
+            for i in range(rollout_length):
+                if i == 0:
+                    o = samples["o"]
+                else:
+                    o = new_o_ret
+                if not diverse:
+                    a = samples["a"] #actor(o, greedy=False)
+                else:
+                    a = actor(o, greedy=False)
+                    #else:
+                    #    o = new_o_ret
+                    #    a = actor(o, greedy=False)
+                n_models = len(self.elites)
+                o_next_pred, r_pred = self.forward_elites(o, a)
+                mu_o = o_next_pred[0]
+                log_var_o = o_next_pred[1]
+                mu_r = r_pred[0]
+                log_var_r = r_pred[1]
+                ret_samples = []
+                idx = [i for i in range(batch_size)]
+                randomlist = random.choices(range(n_models), k=batch_size)
+                if self.use_stochastic:
+                    new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
+                    r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
+                new_o_ret = new_o[randomlist, idx, :]
+                done = samples["done"]
+                #done = self.termination_fn(new_o_ret, a)
+                ret_samples.append((o, a, r[randomlist, idx, :].squeeze(-1), new_o_ret, done))
             return ret_samples
             # for i in range(batch_size):
             #     if self.use_stochastic:

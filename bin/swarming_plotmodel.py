@@ -43,7 +43,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             actions.append([])
             rewards.append(reward_n)
         for j, agent in enumerate(agents):
-            action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval,
+            action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
                                                      generate_val_data=generate_val_data, greedy_eval=greedy_eval)
             if store_data:
                 actions[-1].append(action_unscaled)
@@ -56,7 +56,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             reward_tot[j] += r
         if done_n[0]:
             for j, agent in enumerate(agents):
-                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval,
+                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
                                                          generate_val_data=generate_val_data, greedy_eval=greedy_eval))
                 act_n.append(action)
                 agent.reset()
@@ -83,7 +83,7 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
     step_tot = 0
     steps = []
     ep_generator = range(n_episodes) if n_episodes else itertools.count()
-    logger.info(env.env.observation_space.high)
+    logger.info(env.env.observation_space[0].high)
 
     if generate_val_data:
         logger.info("Generating val data")
@@ -93,7 +93,7 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
     for i in ep_generator:
         data_log.set_episode(i)
         logger.info("episode:" + str(i))
-        if i % 10 == 0:
+        if i % 5 == 0:
             generate_statistics(agents, record_env, data_log)
         # Sometimes generate val data
         if i % 2 == 0:
@@ -131,21 +131,21 @@ def generate_statistics(agents, record_env, data_log):
         score, _, statistics = run_episode(record_env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
 
     # Test Model
-    if agents[0].model:
-        rewards = statistics["rewards"]
-        observations = statistics["observations"]
-        actions = statistics["actions"]
-        observation = observations[0][0]
-        rews_real = []
-        rews_pred = []
-        for step in range(1000):
-            rews_real.append(rewards[step][0])
-            logger.info("stat_rew_real:" + str(rewards[step][0]))
-            action = actions[step][0]
-            observation, rew_predict = agents[0].model.step_single(observation, action)
-            logger.info("stat_rew_predict:" + str(rew_predict[0]))
-            rews_pred.append(rew_predict[0])
-        data_log.log_var("model_vis", {"real": rews_real, "pred": rews_pred})
+    # if agents[0].model:
+    #     rewards = statistics["rewards"]
+    #     observations = statistics["observations"]
+    #     actions = statistics["actions"]
+    #     observation = observations[0][0]
+    #     rews_real = []
+    #     rews_pred = []
+    #     for step in range(1000):
+    #         rews_real.append(rewards[step][0])
+    #         logger.info("stat_rew_real:" + str(rewards[step][0]))
+    #         action = actions[step][0]
+    #         observation, rew_predict = agents[0].model.step_single(observation, action)
+    #         logger.info("stat_rew_predict:" + str(rew_predict[0]))
+    #         rews_pred.append(rew_predict[0])
+    #     data_log.log_var("model_vis", {"real": rews_real, "pred": rews_pred})
 
     # Store model, policy and actor
     networks = []
@@ -198,15 +198,15 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "HalfCheetah-v2"
+    name = "waypoints.py"
 
-    env = EnvWrapper("gym", name)
+    env = EnvWrapper("custom", name)
     # env.env.render()
     # execution loop
-    n_runs = 3
+    n_runs = 5
     logdata = dict()
     logpath = "./logs/"
-    logname = "cheetah_plotmodel_4layers_regulated_2"
+    logname = "swarmtest_all_test4"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -215,7 +215,7 @@ if __name__ == '__main__':
 
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
-    name2 = "HalfCheetah-v2"
+    # name2 = "HalfCheetah-v2"
 
     data_log = DataLog(logpath, logname)
 
@@ -223,30 +223,51 @@ if __name__ == '__main__':
         for run in range(n_runs):
             logger.info("run:" + str(run))
             agent_fn = SAC
+            for n_agent in [1, 2, 4]:
+                logger.info("n_agents:" + str(n_agent))
+                env = EnvWrapper("custom", name, n_agents=n_agent)
+                agent_fn = SAC
+                algname = "model"
 
-            for steps in [40]:
-                #
-                algname = "model_regulated"
-                par = get_hyperpar(name2, alg=algname)
+                par = get_hyperpar("custom", alg=algname)
                 agent_kwargs = {"hyperpar": par}
-                record_env = EnvWrapper("gym-record", name,
-                                        video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
-                           record_env=record_env, name=algname)
-                record_env.close()
+                record_env = EnvWrapper("custom", name, n_agents=n_agent)
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=21000,
+                           record_env=record_env, name=algname+str(n_agent))
 
-                p.dump(logdata, open(logfile, "wb"))
+                env = EnvWrapper("custom", name, n_agents=n_agent)
+                agent_fn = SAC
+                algname = "SAC"
 
+                par = get_hyperpar("custom", alg=algname)
+                agent_kwargs = {"hyperpar": par}
+                record_env = EnvWrapper("custom", name, n_agents=n_agent)
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=21000,
+                           record_env=record_env, name=algname+str(n_agent))
 
-            algname = "SAC"
-            par = get_hyperpar(name2, alg=algname)
-            agent_kwargs = {"hyperpar": par}
-            record_env = EnvWrapper("gym-record", name,
-                                    video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-            single_run(env, agent_fn, logdata,data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
-                       record_env=record_env, name=algname)
-            record_env.close()
-            p.dump(logdata, open(logfile, "wb"))
+            # for steps in [40]:
+            #     #
+            #     algname = "model_regulated"
+            #     par = get_hyperpar(name2, alg=algname)
+            #     agent_kwargs = {"hyperpar": par}
+            #     record_env = EnvWrapper("gym-record", name,
+            #                             video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
+            #     single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
+            #                record_env=record_env, name=algname)
+            #     record_env.close()
+            #
+            #     p.dump(logdata, open(logfile, "wb"))
+            #
+            #
+            # algname = "SAC"
+            # par = get_hyperpar(name2, alg=algname)
+            # agent_kwargs = {"hyperpar": par}
+            # record_env = EnvWrapper("gym-record", name,
+            #                         video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
+            # single_run(env, agent_fn, logdata,data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
+            #            record_env=record_env, name=algname)
+            # record_env.close()
+            # p.dump(logdata, open(logfile, "wb"))
 
             # par = get_hyperpar(name, alg="model")
             # agent_kwargs = {"hyperpar": par}

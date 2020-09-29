@@ -28,7 +28,7 @@ class WaypointsEnv():
         self.max_a = np.ones(2)
         self.n = n_agents
         self.i_step = 0
-        self.max_step = 200000
+        self.max_step = 1000
         self.viewer = None
         self.use_gradient_only = True
         self.n_closest = min(2, self.n-1)

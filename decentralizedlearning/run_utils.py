@@ -32,7 +32,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             actions.append([])
             rewards.append(reward_n)
         for j, agent in enumerate(agents):
-            action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval,
+            action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
                                                      generate_val_data=generate_val_data, greedy_eval=greedy_eval)
             if store_data:
                 actions[-1].append(action_unscaled)
@@ -40,7 +40,6 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             act_n.append(action)
         # step environment
         obs_n, reward_n, done_n, _ = env.step(act_n)
-        i
         for j, r in enumerate(reward_n):
             reward_tot[j] += r
         if done_n[0]:

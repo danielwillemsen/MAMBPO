@@ -4,6 +4,7 @@ import numpy as np
 import time
 
 from decentralizedlearning.algs.utils import EfficientReplayBuffer as ReplayBuffer
+from decentralizedlearning.algs.utils import MultiStepReplayBuffer
 
 from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import StochActor
@@ -12,6 +13,7 @@ from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
 from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 from decentralizedlearning.algs.models import EnsembleModel
+
 import logging
 class SACHyperPar:
     def __init__(self, **kwargs):
@@ -50,6 +52,7 @@ class SACHyperPar:
         self.rollout_schedule_time = list(kwargs.get("rollout_schedule_time", [0,1000]))
         self.rollout_schedule_val = list(kwargs.get("rollout_schedule_val", [1,10]))
         self.real_ratio = float(kwargs.get("real_ratio", 0.05))
+        self.use_multistep_reg = bool(kwargs.get("use_multistep_reg", False))
 
         self.name = str(kwargs.get("name", "cheetah"))
 
@@ -133,6 +136,12 @@ class SAC:
             self.ou = OUNoise(action_dim)
 
         self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
+        if self.par.use_multistep_reg:
+            self.multistep_buffer = MultiStepReplayBuffer(size=100000, batch_size=self.par.batch_size,
+                                                          device=self.device, length=5)
+        else:
+            self.multistep_buffer = None
+
         if self.par.monitor_losses:
             self.val_buffer = ReplayBuffer(batch_size=500, device=self.device)
         if self.par.use_model:
@@ -151,6 +160,11 @@ class SAC:
     def reset(self):
         self.o_old = None
         self.a_old = None
+        self.traj_o = []
+        self.traj_r = []
+        self.traj_a = []
+        self.traj_done = []
+
         if self.par.use_OU:
             self.ou.reset()
 
@@ -178,15 +192,22 @@ class SAC:
             return action.detach().cpu().numpy()
 
         # Do training process step
+        self.traj_o.append(o)
+        self.traj_done.append(done)
+        self.traj_r.append(r)
+
         if self.o_old is not None:
             self.real_buffer.add((self.o_old, self.a_old, r, o, done))
 
+        if self.par.use_multistep_reg:
+            if len(self.traj_o)>self.multistep_buffer.length:
+                self.multistep_buffer.add_mini_traj(self.traj_o[-6:], self.traj_a[-5:], self.traj_r[-5:], self.traj_done[-5:])
         if self.step_i % self.par.update_model_every_n_steps == 0:
             #Update model and generate new samples:
             if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
                 #for i in range(1*self.par.update_every_n_steps):
                     #self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
-                self.model.train_models(self.optimizer_model, self.real_buffer)
+                self.model.train_models(self.optimizer_model, self.real_buffer, multistep_buffer=self.multistep_buffer)
                 #self.model.generate_batch(self.real_buffer.sample_tensors())
                 if self.par.monitor_losses and self.step_i % (250) == 0:
                     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
@@ -238,6 +259,8 @@ class SAC:
         else:
             self.a_old = action
         self.step_i += 1
+
+        self.traj_a.append(action)
         return action.detach().cpu().numpy()
 
     def select_action(self, o, method):
