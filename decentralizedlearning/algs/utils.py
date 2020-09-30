@@ -5,6 +5,8 @@ import torch
 import copy
 import random
 
+def scale_action(env, agent_id, action):
+    return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
 
 class OUNoise:
     """From https://github.com/IgnacioCarlucho/DDPG_MountainCar/blob/master/ou_noise.py#L29"""
@@ -146,6 +148,91 @@ class MultiStepReplayBuffer:
         buff_train.add_multiple((self.o[n_val:self.current_size].clone(), self.a[n_val:self.current_size].clone(), self.r[n_val:self.current_size].clone(), self.o_next[n_val:self.current_size].clone(), self.done[n_val:self.current_size].clone()))
         buff_val.add_multiple((self.o[:n_val].clone(), self.a[:n_val].clone(), self.r[:n_val].clone(), self.o_next[:n_val].clone(), self.done[:n_val].clone()))
         return buff_train, buff_val
+
+class StateBuffer:
+    def __init__(self, size=50000, batch_size=128, device="cpu"):
+        self.initialized = False
+        self.o = None
+        self.r = None
+        self.a = None
+        self.o_next = None
+        self.done = None
+        self.s = None
+        self.device = device
+        self.n_samples = batch_size
+        self.max_size = size
+        self.next_idx = 0
+        self.current_size = 0
+
+    def reallocate(self, size=None):
+        raise NotImplementedError
+        # if size:
+        #     self.max_size = size
+        # self.initialized = False
+        # self.next_idx = 0
+        # self.current_size = 0
+
+    def len(self):
+        return self.current_size
+
+    def __len__(self):
+        return self.current_size
+
+    def add_multiple(self, sample):
+        raise NotImplementedError
+        # self.initialize(sample)
+        # n_samples = sample[0].shape[0]
+        # self.o[self.next_idx:self.next_idx+n_samples] = sample[0]
+        # self.a[self.next_idx:self.next_idx+n_samples] = sample[1]
+        # self.r[self.next_idx:self.next_idx+n_samples] = sample[2]
+        # self.o_next[self.next_idx:self.next_idx+n_samples] = sample[3]
+        # self.done[self.next_idx:self.next_idx+n_samples] = sample[4]
+        # self.next_idx += n_samples
+        # self.current_size += n_samples
+        # if self.current_size > self.max_size:
+        #     self.current_size = self.max_size
+        # if self.next_idx >= self.max_size:
+        #     self.next_idx = self.next_idx % self.max_size
+
+    def add(self, sample, state):
+        #Initialize buffer if not existing yet
+        self.initialize(sample)
+        self.o[self.next_idx] = sample[0]
+        self.a[self.next_idx] = sample[1]
+        self.r[self.next_idx] = sample[2]
+        self.o_next[self.next_idx] = sample[3]
+        self.done[self.next_idx] = sample[4]
+        self.s[self.next_idx] = state
+        self.next_idx += 1
+        if self.current_size < self.max_size:
+            self.current_size += 1
+        if self.next_idx >= self.max_size:
+            self.next_idx = 0
+
+    def initialize(self, sample):
+        if not self.initialized:
+            self.o = torch.zeros((self.max_size, sample[0].shape[-1]), device=self.device, dtype=torch.float32)
+            self.a = torch.zeros((self.max_size, sample[1].shape[-1]), device=self.device, dtype=torch.float32)
+            self.r = torch.zeros((self.max_size), device=self.device, dtype=torch.float32)
+            self.o_next = torch.zeros((self.max_size, sample[3].shape[-1]), device=self.device, dtype=torch.float32)
+            self.done = torch.zeros((self.max_size), device=self.device, dtype=torch.float32)
+            self.s = [None for _ in range(self.max_size)]
+            self.initialized = True
+
+    def sample(self):
+        raise NotImplementedError
+        # samples = random.sample(self.buffer, k=self.n_samples)
+        # data = [*zip(samples)]
+        # data_dict = {"o": data[0], "a": data[1], "r": data[2], "o_next": data[3], "done": data[3]}
+        # return data_dict
+
+    def sample_tensors(self, n=None):
+        if not n:
+            n=self.n_samples
+        idx = np.random.randint(self.current_size, size=n)
+        data_dict = {"o": self.o[idx], "a":self.a[idx], "r": self.r[idx], "o_next": self.o_next[idx], "done": self.done[idx], "s": [self.s[i] for i in idx]}
+        return data_dict
+
 
 class EfficientReplayBuffer:
     def __init__(self, size=50000, batch_size=128, device="cpu"):

@@ -5,6 +5,7 @@ from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.envwrapper import EnvWrapper
 from decentralizedlearning.run_utils import run_episode
 from decentralizedlearning.algs.configs import config_cheetah
+from decentralizedlearning.algs.models import DegradedSim
 
 import torch
 import random
@@ -233,6 +234,69 @@ def analyze_model_obs_statistics(data, it, runs=[0,1,2]):
     plt.show()
 
 
+def analyze_model_obs_statistics_degraded(data, it, runs=[0]):
+    corrs_tot = []
+    for run in runs:
+        n_steps = 101
+        agents, env = setup_agent_env(data, it, run)
+        _, env_deg = setup_agent_env(data, it, run)
+        env_deg.reset()
+        model = DegradedSim(env_deg)
+
+        rollout_mod = [[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
+        rollout_real =[[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
+        rollout_mod_naive = [[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
+
+        # rollout_mod = {1: [], 10:[], 50:[],100:[]}
+        # rollout_real = {1: [], 10:[], 50:[],100:[]}
+
+        for ep in range(100):
+            score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True, store_states=True)
+            print("Score: " + str(score))
+            start = random.randint(0, 500)
+            if model:
+                rewards = statistics["rewards"]
+                observations = statistics["observations"]
+                actions = statistics["actions"]
+                states = statistics["states"]
+                rews_pred_mult = []
+                for rollout in range(5):
+                    observation = observations[start][0]
+                    state = states[start]
+                    rews_real = []
+                    rews_pred = []
+                    for step in range(n_steps):
+                        rews_real.append(rewards[start+step][0])
+                        action = actions[start + step][0]
+                        observation, rew_predict = model.step_single(observation, action, state=state)
+                        state = model.env.get_state()
+                        rews_pred.append(rew_predict[0])
+                        for j in range(len(observation)):
+                            rollout_mod[j][step].append(observation[j])
+                            rollout_real[j][step].append(observations[start+step+1][0][j])
+                            rollout_mod_naive[j][step].append(observations[start][0][j])
+
+        # plt.scatter([rollout_mod[1][2][k] for k in range(len(rollout_mod[0][2]))], [rollout_real[1][2][k] for k in range(len(rollout_mod[0][2]))])
+        plt.show()
+        num_cor = 0
+        corrs_tot.append([])
+        for rol_mod, rol_real, rol_mod_naive in zip(rollout_mod, rollout_real, rollout_mod_naive):
+            corrs = [pearsonr(single_len_mod, single_len_real)[0] for single_len_mod, single_len_real in zip(rol_mod, rol_real)]
+            corrs_naive = [pearsonr(single_len_mod, single_len_real)[0] for single_len_mod, single_len_real in zip(rol_mod_naive, rol_real)]
+            corrs_tot[-1].append(corrs)
+
+    for corrs in zip(*corrs_tot):
+        plt.plot(np.mean(corrs, axis=0))#, label=str(num_cor))
+    num_cor += 1
+
+    plt.xlabel("Rollout length")
+    plt.ylabel("Correlation with real observations")
+    plt.legend()
+    plt.ylim(-0.2, 1.0)
+    plt.grid()
+    plt.title("Model trained for " + str(it*10) + " episodes")
+    plt.show()
+
 def analyze_mean_model_obs_corr(data, its, run=0):
     for it in its:
         agents, env = setup_agent_env(data, it, run, actor_it=8)
@@ -411,9 +475,10 @@ def plot_model_vis(data, it, run=0):
     plt.legend()
     plt.show()
 
-plot_single_run(data, plot_janner=True, var="score_greedy")
-plot_all_run(data, plot_janner=True, var="score_greedy")
-plot_all_run(data, plot_janner=True, var="score_greedy", baseline="cheetah_plotmodel_4layers_regulated_2", baseline_name="model_regulated")
+# plot_single_run(data, plot_janner=True, var="score_greedy")
+# plot_all_run(data, plot_janner=True, var="score_greedy")
+# plot_all_run(data, plot_janner=True, var="score_greedy", baseline="cheetah_plotmodel_4layers_regulated_2", baseline_name="model_regulated")
+analyze_model_obs_statistics_degraded(data, 5)
 
 #analyze_model(data, 0)
 #analyze_model(data, 1)
@@ -425,7 +490,7 @@ plot_all_run(data, plot_janner=True, var="score_greedy", baseline="cheetah_plotm
 # analyze_model_obs_statistics(data, 0)
 # analyze_model_obs_statistics(data, 1)
 # analyze_model_obs_statistics(data, 2)
-analyze_model_obs_statistics_naive(data, 0)
+# analyze_model_obs_statistics_naive(data, 0)
 # analyze_model_obs_statistics(data, 9)
 
 # # analyze_model(data, 1)

@@ -6,6 +6,67 @@ import copy
 import random
 import logging
 import itertools
+from decentralizedlearning.algs.utils import scale_action
+
+class DegradedSim:
+    def __init__(self, env, degradation=0.0, device=None):
+        self.degradation = degradation
+        self.env = env
+        if not device:
+            self.device = torch.device("cpu")
+        else:
+            self.device = device
+
+    def train_models(self, *args, **kwargs):
+        pass
+
+    def log_loss(self, *args, **kwargs):
+        pass
+
+    def degrade(self, action):
+        action_degraded = action + np.random.normal(size=action.shape)*self.degradation
+        return action_degraded
+
+    def generate_efficient(self, samples, actor, diverse=True, batch_size=256):
+        # print("Generating")
+        o = samples["o"]
+        a = actor(o, greedy=False)
+        a_det = a.detach().cpu().numpy()
+        r = samples["r"]
+        ret_samples = []
+        new_o_ret = []
+
+        for i, state in enumerate(samples["s"]):
+            self.env.set_state(state)
+            a_i = a_det[i]
+            a_deg = self.degrade(a_i)
+            a_deg = scale_action(self.env, 0, a_deg)
+            obs_n, reward_n, done_n, _ = self.env.step([a_deg])
+            new_o_ret.append(obs_n[0])
+            r[i] = reward_n[0]
+
+        new_o_ret = torch.from_numpy(np.array(new_o_ret)).to(self.device)
+        ret_samples.append((o, a.detach(), r, new_o_ret, samples["done"]))
+        # print("Generating done")
+        return ret_samples
+
+    def step_single(self, observation, action, state=None):
+        if state is None:
+            raise Exception
+        a_deg = self.degrade(action)
+        a_deg = scale_action(self.env, 0, a_deg)
+        self.env.set_state(state)
+        obs_n, reward_n, done_n, _ = self.env.step([a_deg])
+        return obs_n[0], [reward_n[0]]
+
+    def state_dict(self):
+        return None
+
+
+    # self.model.generate_efficient(self.real_buffer.sample_tensors(n=batch_this_epoch), self.actor,
+    #                               diverse=self.par.diverse,
+    #                               batch_size=batch_this_epoch)  # self.par.batch_size)
+
 
 class EnsembleModel(nn.Module):
     def __init__(self, input_dim, hidden_dims, obs_dim, n_models, monitor_losses=False, use_stochastic=True, name="cheetah", device=None):

@@ -98,6 +98,12 @@ class EnvWrapper:
             return [self.env.reset()]
         return self.env.reset()
 
+    def get_state(self):
+        return self.env.sim.get_state()
+
+    def set_state(self, state):
+        self.env.sim.set_state(state)
+
     def render(self):
         return self.env.render()
 

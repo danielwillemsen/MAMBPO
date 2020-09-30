@@ -14,7 +14,7 @@ def scale_action(env, agent_id, action):
     return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False, store_states=False):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -23,6 +23,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
         observations = []
         rewards = []
         actions = []
+        states = []
     # Start env
     for i in range(steps):
         # query for action from each agent's policy
@@ -31,6 +32,9 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             observations.append(obs_n)
             actions.append([])
             rewards.append(reward_n)
+            if store_states:
+                states.append(env.get_state())
+
         for j, agent in enumerate(agents):
             action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
                                                      generate_val_data=generate_val_data, greedy_eval=greedy_eval)
@@ -58,7 +62,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
     if not store_data:
         return reward_tot, i + 1
     else:
-        extra_data = {"observations": observations, "actions": actions, "rewards": rewards}
+        extra_data = {"observations": observations, "actions": actions, "rewards": rewards, "states": states}
         return reward_tot, i + 1, extra_data
 
 

@@ -5,6 +5,7 @@ import time
 
 from decentralizedlearning.algs.utils import EfficientReplayBuffer as ReplayBuffer
 from decentralizedlearning.algs.utils import MultiStepReplayBuffer
+from decentralizedlearning.algs.utils import StateBuffer
 
 from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import StochActor
@@ -13,6 +14,7 @@ from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
 from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 from decentralizedlearning.algs.models import EnsembleModel
+from decentralizedlearning.algs.models import DegradedSim
 
 import logging
 class SACHyperPar:
@@ -53,7 +55,7 @@ class SACHyperPar:
         self.rollout_schedule_val = list(kwargs.get("rollout_schedule_val", [1,10]))
         self.real_ratio = float(kwargs.get("real_ratio", 0.05))
         self.use_multistep_reg = bool(kwargs.get("use_multistep_reg", False))
-
+        self.use_degraded_sim = bool(kwargs.get("use_degraded_sim", False))
         self.name = str(kwargs.get("name", "cheetah"))
 
 class SAC:
@@ -116,6 +118,13 @@ class SAC:
         else:
             self.model = None
 
+        self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
+        if not self.par.use_degraded_sim:
+            self.model_sample_buffer = self.real_buffer
+        else:
+            env_copy = kwargs.get("env_copy", None)
+            self.model = DegradedSim(env_copy, degradation=0, device=self.device)
+            self.model_sample_buffer = StateBuffer(device=self.device)
         # Initialize 2 critics
         self.critics = []
         self.critics_target = []
@@ -135,7 +144,6 @@ class SAC:
         if self.par.use_OU:
             self.ou = OUNoise(action_dim)
 
-        self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
         if self.par.use_multistep_reg:
             self.multistep_buffer = MultiStepReplayBuffer(size=100000, batch_size=self.par.batch_size,
                                                           device=self.device, length=5)
@@ -152,6 +160,7 @@ class SAC:
 
         self.o_old = None
         self.a_old = None
+        self.s_old = None
 
 
 
@@ -168,7 +177,7 @@ class SAC:
         if self.par.use_OU:
             self.ou.reset()
 
-    def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True):
+    def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
         o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
         # self.logger.info(done)
         if eval:
@@ -198,6 +207,8 @@ class SAC:
 
         if self.o_old is not None:
             self.real_buffer.add((self.o_old, self.a_old, r, o, done))
+        if self.par.use_degraded_sim and self.s_old is not None:
+            self.model_sample_buffer.add((self.o_old, self.a_old, r, o, done), self.s_old)
 
         if self.par.use_multistep_reg:
             if len(self.traj_o)>self.multistep_buffer.length:
@@ -220,8 +231,8 @@ class SAC:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    batch_this_epoch = self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
-                    fake_samples = self.model.generate_efficient(self.real_buffer.sample_tensors(n=batch_this_epoch), self.actor,
+                    batch_this_epoch = 1000#self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
+                    fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch), self.actor,
                                                                  diverse=self.par.diverse,
                                                                  batch_size=batch_this_epoch)  # self.par.batch_size)
                     self.fake_buffer.reallocate(size=batch_this_epoch*self.par.rollout_length)
@@ -254,6 +265,7 @@ class SAC:
             action = self.select_action(o, "random")
 
         self.o_old = o
+        self.s_old = s
         if action.size() == torch.Size([]):
             self.a_old = action.unsqueeze(0)
         else:

@@ -25,7 +25,7 @@ def scale_action(env, agent_id, action):
     return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False, pass_state=True):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -43,8 +43,12 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             actions.append([])
             rewards.append(reward_n)
         for j, agent in enumerate(agents):
+            if pass_state:
+                state = env.get_state()
+            else:
+                state = None
             action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval,
-                                                     generate_val_data=generate_val_data, greedy_eval=greedy_eval)
+                                                     generate_val_data=generate_val_data, greedy_eval=greedy_eval, s=state)
             if store_data:
                 actions[-1].append(action_unscaled)
             action = scale_action(env, j, action_unscaled)
@@ -131,21 +135,21 @@ def generate_statistics(agents, record_env, data_log):
         score, _, statistics = run_episode(record_env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
 
     # Test Model
-    if agents[0].model:
-        rewards = statistics["rewards"]
-        observations = statistics["observations"]
-        actions = statistics["actions"]
-        observation = observations[0][0]
-        rews_real = []
-        rews_pred = []
-        for step in range(1000):
-            rews_real.append(rewards[step][0])
-            logger.info("stat_rew_real:" + str(rewards[step][0]))
-            action = actions[step][0]
-            observation, rew_predict = agents[0].model.step_single(observation, action)
-            logger.info("stat_rew_predict:" + str(rew_predict[0]))
-            rews_pred.append(rew_predict[0])
-        data_log.log_var("model_vis", {"real": rews_real, "pred": rews_pred})
+    # if agents[0].model:
+    #     rewards = statistics["rewards"]
+    #     observations = statistics["observations"]
+    #     actions = statistics["actions"]
+    #     observation = observations[0][0]
+    #     rews_real = []
+    #     rews_pred = []
+    #     for step in range(1000):
+    #         rews_real.append(rewards[step][0])
+    #         logger.info("stat_rew_real:" + str(rewards[step][0]))
+    #         action = actions[step][0]
+    #         observation, rew_predict = agents[0].model.step_single(observation, action)
+    #         logger.info("stat_rew_predict:" + str(rew_predict[0]))
+    #         rews_pred.append(rew_predict[0])
+    #     data_log.log_var("model_vis", {"real": rews_real, "pred": rews_pred})
 
     # Store model, policy and actor
     networks = []
@@ -206,7 +210,7 @@ if __name__ == '__main__':
     n_runs = 3
     logdata = dict()
     logpath = "./logs/"
-    logname = "cheetah_plotmodel_4layers_regulated_2"
+    logname = "cheetah_degraded_test"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -226,9 +230,15 @@ if __name__ == '__main__':
 
             for steps in [40]:
                 #
-                algname = "model_regulated"
+                algname = "model_degraded"
+
+                if algname == "model_degraded":
+                    env_fake = EnvWrapper("gym", name)
+                    env_fake.reset()
+                else:
+                    env_fake = None
                 par = get_hyperpar(name2, alg=algname)
-                agent_kwargs = {"hyperpar": par}
+                agent_kwargs = {"hyperpar": par, "env_copy": env_fake}
                 record_env = EnvWrapper("gym-record", name,
                                         video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
                 single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
@@ -238,15 +248,15 @@ if __name__ == '__main__':
                 p.dump(logdata, open(logfile, "wb"))
 
 
-            algname = "SAC"
-            par = get_hyperpar(name2, alg=algname)
-            agent_kwargs = {"hyperpar": par}
-            record_env = EnvWrapper("gym-record", name,
-                                    video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-            single_run(env, agent_fn, logdata,data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
-                       record_env=record_env, name=algname)
-            record_env.close()
-            p.dump(logdata, open(logfile, "wb"))
+            # algname = "SAC"
+            # par = get_hyperpar(name2, alg=algname)
+            # agent_kwargs = {"hyperpar": par}
+            # record_env = EnvWrapper("gym-record", name,
+            #                         video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
+            # single_run(env, agent_fn, logdata,data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
+            #            record_env=record_env, name=algname)
+            # record_env.close()
+            # p.dump(logdata, open(logfile, "wb"))
 
             # par = get_hyperpar(name, alg="model")
             # agent_kwargs = {"hyperpar": par}
