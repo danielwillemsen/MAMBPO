@@ -38,7 +38,7 @@ def get_hyperpar(env, alg):
                            step_random=5000,
                            update_every_n_steps=1,
                            update_model_every_n_steps=250,
-                           n_steps=10,
+                           n_steps=40,
                            n_models=10,
                            batch_size=256,
                            weight_decay=0.0,

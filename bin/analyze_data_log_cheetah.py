@@ -6,15 +6,17 @@ from decentralizedlearning.envwrapper import EnvWrapper
 from decentralizedlearning.run_utils import run_episode
 from decentralizedlearning.algs.configs import config_cheetah
 from decentralizedlearning.algs.models import DegradedSim
+from decentralizedlearning.algs.models import EnsembleModel
 
 import torch
 import random
 from scipy.stats import pearsonr
 
-name = "cheetah_plotmodel_4layers_3"
+name = "cheetah_degraded_test"
 #cheetah_plotmodel_4layers_regulated_2
-name_run = "model"
+name_run = "model_degraded"
 data = torch.load("../logs/" + name + ".p", map_location="cpu")
+a =2
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -356,9 +358,22 @@ def setup_agent_env(data, it, run, actor_it=None):
         agent.actor.load_state_dict(data[name_run]["runs"][run]["networks"][actor_it][3][0]["actor"])
         for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks"][it][3][0]["critics"]):
             critic.load_state_dict(state_dict)
-        agent.model.load_state_dict(data[name_run]["runs"][run]["networks"][it][3][0]["model"])
+        if type(agent.model) == EnsembleModel and data[name_run]["runs"][run]["networks"][it][3][0]["model"] is not None:
+            agent.model.load_state_dict(data[name_run]["runs"][run]["networks"][it][3][0]["model"])
     return agents, env
 
+def setup_agent_env2(run, it, actor_it=None):
+    env = EnvWrapper("gym", "HalfCheetah-v2")
+    if not actor_it:
+        actor_it = it
+    agents = [SAC(env.observation_space[0].shape[0], env.action_space[0].shape[0], use_model=True,
+                  hidden_dims_model=(200, 200, 200, 200))]
+    for agent in agents:
+        agent.actor.load_state_dict(run["networks"][actor_it][3][0]["actor"])
+        for critic, state_dict in zip(agent.critics, run["networks"][it][3][0]["critics"]):
+            critic.load_state_dict(state_dict)
+        agent.model.load_state_dict(run["networks"][it][3][0]["model"])
+    return agents, env
 
 def plot_all_run(data, var="score", plot_janner=True, baseline=None, baseline_name=None):
     if plot_janner:
@@ -399,7 +414,44 @@ def plot_all_run(data, var="score", plot_janner=True, baseline=None, baseline_na
     plt.show()
 
 
-def plot_name(data, key, steps, var):
+def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseline_name=None):
+    if plot_janner:
+        tasks = ["cheetah"]
+        algorithms = ['mbpo']
+
+        colors = {
+            'mbpo': '#3a22b4',
+        }
+        import pickle
+        for task in tasks:
+            for alg in algorithms:
+                print(task, alg)
+
+                ## load results
+                fname = '../logs/mbpo_v1.5_results/{}_{}.pkl'.format(task, alg)
+                data_temp = pickle.load(open(fname, 'rb'))
+
+                ## plot trial mean
+                plt.plot(data_temp['x'] * 1000, data_temp['y'], linewidth=1.5, label=alg + " (Janner et al.)",
+                         c=colors[alg])
+                ## plot error bars
+                plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
+                                 data_temp['y'] + data_temp['std'], color=colors[alg],
+                                 alpha=0.25)
+    steps = np.arange(0,50001,1000)
+    for log in logs:
+        data = torch.load("../logs/" + log + ".p", map_location="cpu")
+        for key in data.keys():
+            plot_name(data, key, steps, var, name=log)
+    plt.xlim(0, steps[-1])
+    plt.xlabel("Timestep")
+    plt.ylabel("Score")
+    plt.legend()
+    plt.show()
+
+def plot_name(data, key, steps, var, name=None):
+    if not name:
+        name=key + "(ours)"
     values = []
     for run in data[key]["runs"]:
         values.append([])
@@ -410,7 +462,7 @@ def plot_name(data, key, steps, var):
         values[-1] = np.array(values[-1])
     mean_scores = np.mean(values, axis=0)
     std_scores = np.std(values, axis=0)
-    plt.plot(steps, mean_scores, label=key + " (ours)")
+    plt.plot(steps, mean_scores, label=name + " (ours)")
     plt.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25)
 
 
@@ -475,11 +527,98 @@ def plot_model_vis(data, it, run=0):
     plt.legend()
     plt.show()
 
-# plot_single_run(data, plot_janner=True, var="score_greedy")
-# plot_all_run(data, plot_janner=True, var="score_greedy")
-# plot_all_run(data, plot_janner=True, var="score_greedy", baseline="cheetah_plotmodel_4layers_regulated_2", baseline_name="model_regulated")
-analyze_model_obs_statistics_degraded(data, 5)
+def calc_mse_score(env, agents):
+    scores = []
+    for ep in range(10):
+        score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=True, store_data=True,
+                                           store_states=True)
+        scores.append(score)
+    mean_score = np.mean(scores)
 
+    ses = []
+    for ep in range(5):
+        score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True,
+                                           store_states=True)
+
+        rewards = statistics["rewards"]
+        observations = statistics["observations"]
+        actions = statistics["actions"]
+        states = statistics["states"]
+        for i in range(20):
+            start = random.randint(0, 500)
+            observation = observations[start][0]
+            action = actions[start][0]
+            observation_next_pred, _ = agents[0].model.step_single(observation, action, state=states[start])
+            observation_next = observations[start+1][0]
+            ses.append(np.mean((observation_next-observation_next_pred)**2))
+    mean_se = np.mean(ses)
+    return mean_se, mean_score
+
+def plot_mse_perf(logs, its):
+    colors = ["red", "green", "blue", "orange", "yellow", "cyan"]
+    for log in logs:
+        data = torch.load("../logs/" + log + ".p", map_location="cpu")
+        for name, val in data.items():
+            for i, it in enumerate(its):
+                for run in val["runs"]:
+                    if "model" in run["networks"][it][3][0].keys() and run["networks"][it][3][0]["model"] is not None:
+                        agents, env = setup_agent_env2(run, it)
+                        mse, score = calc_mse_score(env, agents)
+                        plt.scatter(mse, score, label=str(it), c=colors[i])
+    plt.legend()
+    plt.show()
+
+def plot_mse_noise(logs, data, its):
+    degs = [0.0, 0.1, 0.2, 0.3]
+    it = 5
+    for degradation in degs:
+        for bias in [0.0,0.1]:
+            agents, env = setup_agent_env(data, it, 0)
+            _, env_deg = setup_agent_env(data, it, 0)
+            env_deg.reset()
+            model = DegradedSim(env_deg, degradation=degradation, bias=bias)
+            agents[0].model = model
+            mse, _ = calc_mse_score(env, agents)
+            plt.scatter(degradation, mse)
+
+    colors = ["red", "green", "blue", "orange", "yellow", "cyan"]
+    for log in logs:
+        data = torch.load("../logs/" + log + ".p", map_location="cpu")
+        for name, val in data.items():
+            for i, it in enumerate(its):
+                for j, run in enumerate(val["runs"]):
+                    if "model" in run["networks"][it][3][0].keys() and run["networks"][it][3][0]["model"] is not None:
+                        agents, env = setup_agent_env2(run, it)
+                        mse, score = calc_mse_score(env, agents)
+                        if j == 0:
+                            plt.hlines(mse, label=str(it), colors=colors[i], xmin=degs[0], xmax=degs[-1])
+                        else:
+                            plt.hlines(mse, colors=colors[i], xmin=degs[0], xmax=degs[-1])
+    plt.legend()
+    plt.ylabel("MSE")
+    plt.xlabel("Action noise")
+
+    plt.show()
+
+# # plot_single_run(data, plot_janner=True, var="score_greedy")
+# plot_all_run(data, plot_janner=True, var="score_greedy")
+# # plot_all_run(data, plot_janner=True, var="score_greedy", baseline="cheetah_plotmodel_4layers_regulated_2", baseline_name="model_regulated")
+# # analyze_model_obs_statistics_degraded(data, 5)
+#
+# logs = ["cheetah_plotmodel_4layers_3"]
+# plot_mse_perf(logs, [3,5,6,7,8,9])
+#
+logs = ["cheetah_degraded_test",
+        "cheetah_degraded_test_2000_10",
+        "cheetah_degraded_test_1000_20",
+        "cheetah_degraded_test_2000_20",
+        "cheetah_degraded_test_1000_40",
+        "cheetah_degraded_test_2000_40",
+        "cheetah_degraded_test_1000_40_0.1"]
+plot_all_run_logs(logs, var="score_greedy")
+logs = ["cheetah_plotmodel_4layers_3"]
+
+plot_mse_noise(logs, data, [1, 3, 5, 9])
 #analyze_model(data, 0)
 #analyze_model(data, 1)
 # plot_model_vis(data, 1)

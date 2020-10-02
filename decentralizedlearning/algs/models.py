@@ -9,8 +9,9 @@ import itertools
 from decentralizedlearning.algs.utils import scale_action
 
 class DegradedSim:
-    def __init__(self, env, degradation=0.0, device=None):
+    def __init__(self, env, degradation=0.0, bias=0.0, device=None):
         self.degradation = degradation
+        self.bias = bias
         self.env = env
         if not device:
             self.device = torch.device("cpu")
@@ -24,7 +25,7 @@ class DegradedSim:
         pass
 
     def degrade(self, action):
-        action_degraded = action + np.random.normal(size=action.shape)*self.degradation
+        action_degraded = action*(1+self.bias) + np.random.normal(size=action.shape)*self.degradation
         return action_degraded
 
     def generate_efficient(self, samples, actor, diverse=True, batch_size=256):
@@ -199,7 +200,7 @@ class EnsembleModel(nn.Module):
         #return loss1, loss2
         return l1
 
-    def step_single(self, observation, action):
+    def step_single(self, observation, action, **kwargs):
         o = torch.tensor(observation, device=self.device, dtype=torch.float)
         a = torch.tensor(action, device=self.device, dtype=torch.float)
         o_next_pred, r_pred = self.forward_elites(o, a)
