@@ -8,6 +8,7 @@ import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from waypoints import WaypointsEnv
+from circle2 import CircleEnv
 
 try:
     from crossing import CrossingEnv
@@ -57,7 +58,7 @@ class EnvWrapper:
             #    self.action_type = "continuous"
         if suite == "custom":
             #namedict = {"waypoints.py": WaypointsEnv, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
-            namedict = {"waypoints.py": WaypointsEnv}#, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
+            namedict = {"waypoints.py": WaypointsEnv, "circle.py": CircleEnv}#, "crossing.py": CrossingEnv, "continuouscrossing.py": ContinuousCrossingEnv}
 
             self.env = namedict[env_name](**kwargs)
             self.n_agents = self.env.n

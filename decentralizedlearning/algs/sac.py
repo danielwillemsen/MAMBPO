@@ -123,7 +123,7 @@ class SAC:
             self.model_sample_buffer = self.real_buffer
         else:
             env_copy = kwargs.get("env_copy", None)
-            self.model = DegradedSim(env_copy, degradation=0.1, device=self.device)
+            self.model = DegradedSim(env_copy, degradation=0.0, bias=0.4, device=self.device)
             self.model_sample_buffer = StateBuffer(device=self.device)
         # Initialize 2 critics
         self.critics = []

@@ -25,7 +25,7 @@ class DegradedSim:
         pass
 
     def degrade(self, action):
-        action_degraded = action*(1+self.bias) + np.random.normal(size=action.shape)*self.degradation
+        action_degraded = action*(1-self.bias) + np.random.normal(size=action.shape)*self.degradation
         return action_degraded
 
     def generate_efficient(self, samples, actor, diverse=True, batch_size=256):

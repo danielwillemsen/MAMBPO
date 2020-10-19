@@ -5,9 +5,20 @@ try:
 except:
     pass
 
+
+def cart2pol(x, y):
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    return(rho, phi)
+
+def pol2cart(rho, phi):
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return(x, y)
+
 class Agent:
-    def __init__(self):
-        self.pos = np.random.random(size=(2))
+    def __init__(self, angle):
+        self.pos = np.array(pol2cart(0.5,angle))
         self.vel = np.array([0., 0.])
 
     def update(self, a, dt):
@@ -16,47 +27,45 @@ class Agent:
         self.pos += self.vel*dt
 
 class Target:
-    def __init__(self):
-        self.pos = np.random.random(size=(2))
+    def __init__(self, angle):
+        self.pos = np.array(pol2cart(0.5,angle))
 
     def reset(self):
-        self.pos = np.random.random(size=(2))
+        pass
 
-class WaypointsEnv():
+class CircleEnv():
     def __init__(self, n_agents=2):
         self.dt = 0.1
         self.max_a = np.ones(2)
         self.n = n_agents
         self.i_step = 0
-        self.max_step = 50
+        self.max_step = 100
         self.viewer = None
         self.use_gradient_only = True
         self.n_closest = min(2, self.n-1)
-        self.max_o = np.ones(4*self.n_closest + 6)
+        self.max_o = np.ones(4*self.n_closest + 6)*1
 
         self.action_space = [spaces.Box(low=-self.max_a, high=self.max_a, shape = (2,)) for i in range(n_agents)]
         self.observation_space = [spaces.Box(low=self.max_o*0, high=self.max_o, shape=(4*self.n_closest+6,)) for i in range(n_agents)]
-        self.agents = [Agent() for agent in range(n_agents)]
-        self.targets = [Target() for target in range(n_agents)]
+        self.agents = [Agent(angle) for angle in np.linspace(0, 2*np.pi, num=self.n, endpoint=False)]
+        self.targets = [Target(angle+np.pi) for angle in np.linspace(0, 2*np.pi, num=self.n, endpoint=False)]
 
     def step(self, a: list):
         self.i_step += 1
         rewards = [0. for i in range(self.n)]
-        rewards_collision = [0. for i in range(self.n)]
-        rewards_target = [0. for i in range(self.n)]
-
+        
         for i, agent in enumerate(self.agents):
             agent.update(a[i], self.dt)
             # rewards[i] += np.linalg.norm(agent.vel)
-            if agent.pos[0] > self.max_o[0] or agent.pos[0]<0.:
+            if agent.pos[0] > self.max_o[0] or agent.pos[0]<-self.max_o[0]:
                 agent.vel[0] *= 0.
                 rewards[i] -= .0
-                agent.pos[0] = max(min(agent.pos[0], self.max_o[0]), 0.)
+                agent.pos[0] = max(min(agent.pos[0], self.max_o[0]), -self.max_o[0])
 
-            if agent.pos[1] > self.max_o[1] or agent.pos[1]<0.:
+            if agent.pos[1] > self.max_o[1] or agent.pos[1]<self.max_o[1]:
                 agent.vel[1] *= 0.
                 rewards[i] -= .0
-                agent.pos[1] = max(min(agent.pos[1], self.max_o[1]), 0.)
+                agent.pos[1] = max(min(agent.pos[1], self.max_o[1]), -self.max_o[1])
             # Targets
             if not self.use_gradient_only:
                 if np.linalg.norm(agent.pos - self.targets[i].pos) < -0.25:
@@ -65,25 +74,31 @@ class WaypointsEnv():
                 else:
                     rewards[i] += -0.2 * np.linalg.norm(agent.pos - self.targets[i].pos)
             else:
-                rewards[i] += -1.0 * np.linalg.norm(agent.pos - self.targets[i].pos)
-                rewards_target[i] += -1.0 * np.linalg.norm(agent.pos - self.targets[i].pos)
+                if np.linalg.norm(self.targets[i].pos - agent.pos)<0.00:
+                    rewards[i] += 1.0
+                else:
+                    #rewards[i] -= 0.1/np.linalg.norm(self.targets[i].pos - agent.pos)
+                    rewards[i] -= np.linalg.norm(self.targets[i].pos - agent.pos)**(1./2.)
+
             # Collissions
             for agent2 in self.agents:
                 if agent2 is not agent:
-                    if np.linalg.norm(agent2.pos - agent.pos)<0.10:
+                    if np.linalg.norm(agent2.pos - agent.pos)<0.0:
                         rewards[i] -= 1.0
-                        rewards_collision[i] -= 1.0
-                    # else:
-                    #     rewards[i] -= 0.1/np.linalg.norm(agent2.pos - agent.pos)
+                        print("Collision!")
+
+                    else:
+                        #rewards[i] -= 0.1/np.linalg.norm(agent2.pos - agent.pos)
+                        rewards[i] += np.linalg.norm(agent2.pos - agent.pos)**(1./2.)
                     # print("Collision!")
-            if self.i_step % 100 == 0:
+            if self.i_step % 50 == 0:
                 for target in self.targets:
                     target.reset()
-        return self._get_obs(), rewards, [self.i_step > self.max_step], None, {"rewards_target": rewards_target, "rewards_collision": rewards_collision}
+        return self._get_obs(), rewards, [self.i_step > self.max_step], None
 
-    def reset(self): 
-        self.agents = [Agent() for agent in range(self.n)]
-        self.targets = [Target() for target in range(self.n)]
+    def reset(self):
+        self.agents = [Agent(angle) for angle in np.linspace(0, 2*np.pi, num=self.n, endpoint=False)]
+        self.targets = [Target(angle+np.pi) for angle in np.linspace(0, 2*np.pi, num=self.n, endpoint=False)]
         self.i_step = 0
         return self._get_obs()
 
@@ -124,7 +139,7 @@ class WaypointsEnv():
         def render(self):
             if self.viewer is None:
                 self.viewer = rendering.Viewer(500, 500)
-                self.viewer.set_bounds(0.,1.,0.,1.)
+                self.viewer.set_bounds(-1.,1.,-1.,1.)
                 self.transforms = []
                 self.target_transforms = []
                 col = 0

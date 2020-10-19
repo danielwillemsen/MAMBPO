@@ -10,9 +10,9 @@ import torch
 import random
 from scipy.stats import pearsonr
 
-name = "swarmtest_all_test4"
+name = "3_agent_model"
 
-name_run = "model4"
+name_run = "3_agent_model"
 data = torch.load("../logs/" + name + ".p", map_location="cpu")
 
 def find_nearest(array, value):
@@ -273,7 +273,7 @@ def setup_agent_env(data, it, run, actor_it=None):
     return agents, env
 
 
-def plot_all_run(data, var="score", plot_janner=True):
+def plot_all_run(data, var="score", plot_janner=False):
     if plot_janner:
         tasks = ["cheetah"]
         algorithms = ['mbpo']
@@ -297,7 +297,7 @@ def plot_all_run(data, var="score", plot_janner=True):
                 plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
                                  data_temp['y'] + data_temp['std'], color=colors[alg],
                                  alpha=0.25)
-    steps = np.arange(0,20001,1000)
+    steps = np.arange(0,20001,100)
     for key in data.keys():
         values = []
         for run in data[key]["runs"]:
@@ -381,7 +381,7 @@ def plot_model_vis(data, it, run=0):
     plt.legend()
     plt.show()
 
-plot_single_run(data, plot_janner=False)
+plot_single_run(data, plot_janner=False, var="score_greedy")
 plot_all_run(data, plot_janner=False, var="score_greedy")
 
 # analyze_model(data, 0)
@@ -389,10 +389,10 @@ plot_all_run(data, plot_janner=False, var="score_greedy")
 # # plot_model_vis(data, 1)
 # # analyze_model(data, 0)
 # analyze_model(data, 2)
-analyze_model_obs_statistics(data, 1)
-analyze_model_obs_statistics(data, 2)
-
-analyze_model_obs_statistics(data, 0)
+# analyze_model_obs_statistics(data, 1)
+# analyze_model_obs_statistics(data, 2)
+#
+# analyze_model_obs_statistics(data, 0)
 
 # #
 # # analyze_model(data, 1)
