@@ -12,11 +12,12 @@ from decentralizedlearning.algs.utils import StochActor
 from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
-from decentralizedlearning.algs.utils import convert_inputs_to_tensors
+from decentralizedlearning.algs.utils import convert_multi_inputs_to_tensors
 from decentralizedlearning.algs.models import EnsembleModel
 from decentralizedlearning.algs.models import DegradedSim
-
+from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 import logging
+
 class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
@@ -34,7 +35,7 @@ class SACHyperPar:
         self.lr_model = float(kwargs.get("lr_model", 0.001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
 
-        self.step_random = int(kwargs.get("step_random", 1000))
+        self.step_random = int(kwargs.get("step_random", 500))
         self.update_every_n_steps = int(kwargs.get("update_every_n_steps", 1))
         self.update_model_every_n_steps = int(kwargs.get("update_model_every_n_steps",250))
         self.n_steps = int(kwargs.get("n_steps", 1))
@@ -59,11 +60,95 @@ class SACHyperPar:
         self.name = str(kwargs.get("name", "cheetah"))
         self.use_common_policy = bool(kwargs.get("use_common_policy", False))
 
-class SAC:
-    def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
-        # Initialize arguments
-        self.logger = logging.getLogger('root')
+class MASACAgent:
+    def __init__(self, obs_dim, hidden_dims_actor, action_dim, device, par, common_policy=None, common_policy_target=None):
+        self.step_i = 0
+        self.par = par
+        self.device = device
+        self.action_dim = action_dim
+        if not common_policy:
+            self.actor = StochActor(obs_dim, hidden_dims_actor, action_dim)
+            self.actor_target = copy.deepcopy(self.actor)
+            self.actor.to(device)
+            self.actor_target.to(device)
+        else:
+            self.actor = common_policy
+            self.actor_target = common_policy_target
 
+        self.model = None
+        self.optimizer_actor = torch.optim.Adam(self.actor.parameters(),
+                                                lr=self.par.lr_actor,
+                                                weight_decay=self.par.weight_decay)
+        for par in self.actor_target.parameters():
+            par.requires_grad = False
+        if self.par.autotune:
+            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
+            self.optimizer_alpha = torch.optim.Adam([self.log_alpha],
+                                                    lr=self.par.lr_actor)#self.par.lr_actor)
+            self.alpha = self.log_alpha.exp().item()
+        else:
+            self.alpha = self.par.alpha
+            
+    def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
+        o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
+        # if eval:
+        #     # Select greedy action and return
+        #     if greedy_eval:
+        #         action = self.select_action(o, "greedy")
+        #     else:
+        #         action = self.select_action(o, "noisy")
+        #     return action.detach().cpu().numpy()
+        #
+        # if generate_val_data:
+        #     # Select greedy action and return
+        #     action = self.select_action(o, "noisy")
+        #     if self.o_old is not None:
+        #         self.val_buffer.add((self.o_old, self.a_old, r, o, done))
+        #     self.o_old = o
+        #     if action.size() == torch.Size([]):
+        #         self.a_old = action.unsqueeze(0)
+        #     else:
+        #         self.a_old = action
+        #     return action.detach().cpu().numpy()
+        # Select Action
+        if eval:
+            action = self.select_action(o, "greedy")
+        elif self.step_i > self.par.step_random:
+            action = self.select_action(o, "noisy")
+        else:
+            action = self.select_action(o, "random")
+
+        self.o_old = o
+        self.s_old = s
+        if action.size() == torch.Size([]):
+            self.a_old = action.unsqueeze(0)
+        else:
+            self.a_old = action
+        return action.detach().cpu().numpy()
+
+    def reset(self):
+        return
+
+    def select_action(self, o, method):
+        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
+        if method == "random":
+            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
+
+        with torch.no_grad():
+            if method == "greedy":
+                action = self.actor(o.unsqueeze(0), greedy=True).squeeze()
+            else:
+                action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
+            return action
+
+
+class MASAC:
+    def __init__(self, n_agents, obs_dim, action_dim, hyperpar=None, **kwargs):
+        # Initialize arguments
+        self.obs_dim = obs_dim
+        self.obs_i_per_agent = [[i+i_agent*obs_dim for i in range(obs_dim)] for i_agent in range(n_agents)]
+        self.logger = logging.getLogger('root')
+        self.n_agents = n_agents
         if torch.cuda.is_available():
             print("Using CUDA")
             self.device = torch.device("cuda:0")
@@ -82,26 +167,25 @@ class SAC:
         self.logger.info(self.par.__dict__)
         self.action_dim = action_dim
 
-        # Initialize actor
-        self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim)
-        self.actor_target = copy.deepcopy(self.actor)
-        self.actor.to(self.device)
-        self.actor_target.to(self.device)
-
-        self.optimizer_actor = torch.optim.Adam(self.actor.parameters(),
-                                                lr=self.par.lr_actor,
-                                                weight_decay=self.par.weight_decay)
-
-        for par in self.actor_target.parameters():
-            par.requires_grad = False
-
-        if self.par.autotune:
-            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
-            self.optimizer_alpha = torch.optim.Adam([self.log_alpha],
-                                                    lr=self.par.lr_actor)#self.par.lr_actor)
-            self.alpha = self.log_alpha.exp().item()
+        if not self.par.use_common_policy:
+            # Initialize acting agents actor
+            self.agents = [MASACAgent(obs_dim, self.par.hidden_dims_actor, action_dim, self.device, self.par) for i in range(n_agents)]
         else:
-            self.alpha = self.par.alpha
+            actor = StochActor(obs_dim, self.par.hidden_dims_actor, action_dim)
+            actor_target = copy.deepcopy(actor)
+            self.agents = [MASACAgent(obs_dim, self.par.hidden_dims_actor, action_dim, self.device, self.par,
+                                      common_policy=actor, common_policy_target=actor_target) for i in range(n_agents)]
+
+        # self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim)
+        # self.actor_target = copy.deepcopy(self.actor)
+        #self.actor.to(self.device)
+        #self.actor_target.to(self.device)
+
+        #self.optimizer_actor =
+
+
+
+
 
         if self.par.use_model:
             self.model = EnsembleModel(obs_dim + action_dim,
@@ -119,7 +203,7 @@ class SAC:
         else:
             self.model = None
 
-        self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
+        self.real_buffer = ReplayBuffer(size=1000000, batch_size=self.par.batch_size, device=self.device)
         if not self.par.use_degraded_sim:
             self.model_sample_buffer = self.real_buffer
         else:
@@ -131,7 +215,7 @@ class SAC:
         self.critics_target = []
         self.optimizer_critics = []
         for k in range(2):
-            critic = Critic(obs_dim + action_dim, self.par.hidden_dims_critic)
+            critic = Critic((obs_dim + action_dim)*n_agents, self.par.hidden_dims_critic)
             critic.to(self.device)
             self.critics.append(critic)
             self.critics_target.append(copy.deepcopy(critic))
@@ -162,7 +246,7 @@ class SAC:
         self.o_old = None
         self.a_old = None
         self.s_old = None
-        self.reset()
+
 
 
         self.step_i = 0
@@ -178,33 +262,15 @@ class SAC:
         if self.par.use_OU:
             self.ou.reset()
 
-    def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
-        o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
+    def step(self, o, r, a, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
+        o, r, done, a = convert_multi_inputs_to_tensors(o, r, done, a, self.device)
         # self.logger.info(done)
-        if eval:
-            # Select greedy action and return
-            if greedy_eval:
-                action = self.select_action(o, "greedy")
-            else:
-                action = self.select_action(o, "noisy")
-            return action.detach().cpu().numpy()
-
-        if generate_val_data:
-            # Select greedy action and return
-            action = self.select_action(o, "noisy")
-            if self.o_old is not None:
-                self.val_buffer.add((self.o_old, self.a_old, r, o, done))
-            self.o_old = o
-            if action.size() == torch.Size([]):
-                self.a_old = action.unsqueeze(0)
-            else:
-                self.a_old = action
-            return action.detach().cpu().numpy()
-
+        for agent in self.agents:
+            agent.step_i += 1
         # Do training process step
-        self.traj_o.append(o)
-        self.traj_done.append(done)
-        self.traj_r.append(r)
+        # self.traj_o.append(o)
+        # self.traj_done.append(done)
+        # self.traj_r.append(r)
 
         if self.o_old is not None:
             self.real_buffer.add((self.o_old, self.a_old, r, o, done))
@@ -225,8 +291,8 @@ class SAC:
                     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
                     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
                     print(len(self.fake_buffer))
-        if self.par.monitor_losses and self.step_i %(250) == 0:
-            self.logger.info("alpha:" + str(self.alpha))
+        # if self.par.monitor_losses and self.step_i %(250) == 0:
+        #     self.logger.info("alpha:" + str(self.agents[0].alpha))
 
         if self.step_i % self.par.update_every_n_steps == 0:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
@@ -239,7 +305,7 @@ class SAC:
                     self.fake_buffer.reallocate(size=batch_this_epoch*self.par.rollout_length)
                     for item in fake_samples:
                         self.fake_buffer.add_multiple(item)
-                for step in range(self.par.n_steps):# * self.par.update_every_n_steps):
+                for step in range(self.par.n_steps):#*self.par.update_every_n_steps):
                     # Train actor and critic
                     n_real = int(self.par.batch_size * self.par.real_ratio)
                     b_fake = self.ac_buffer.sample_tensors(n=self.par.batch_size-n_real)
@@ -255,38 +321,15 @@ class SAC:
                         self.update_actor(b)
 
                         # Update Target Networks
-                        update_target_networks([self.actor] + self.critics,
-                                               [self.actor_target] + self.critics_target,
+                        update_target_networks([agent.actor for agent in self.agents] + self.critics,
+                                               [agent.actor_target for agent in self.agents] + self.critics_target,
                                                self.par.tau)
-
-        # Select Action
-        if self.step_i > self.par.step_random:
-            action = self.select_action(o, "noisy")
-        else:
-            action = self.select_action(o, "random")
 
         self.o_old = o
         self.s_old = s
-        if action.size() == torch.Size([]):
-            self.a_old = action.unsqueeze(0)
-        else:
-            self.a_old = action
+        self.a_old = a
         self.step_i += 1
 
-        self.traj_a.append(action)
-        return action.detach().cpu().numpy()
-
-    def select_action(self, o, method):
-        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
-        if method == "random":
-            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
-
-        with torch.no_grad():
-            if method == "greedy":
-                action = self.actor(o.unsqueeze(0), greedy=True).squeeze()
-            else:
-                action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
-            return action
 
     def update_rollout_length(self):
         if self.par.use_rollout_schedule:
@@ -295,45 +338,71 @@ class SAC:
             self.par.rollout_length = int(max(min(y, self.par.rollout_schedule_val[1]), self.par.rollout_schedule_val[0]))
 
     def update_actor(self, b):
+        for par in self.critics[1].parameters():
+            par.requires_grad = False
         for par in self.critics[0].parameters():
             par.requires_grad = False
-        if self.use_correct:
-            act, logp_pi = self.actor(b["o"], sample=False)
-        else:
-            act, logp_pi = self.actor(b["o_next"], sample=False)
 
-        q1 = self.critics[0](b["o"], act).squeeze()
-        q2 = self.critics[1](b["o"], act).squeeze()
-        if self.use_min:
-            q_min = torch.min(q1, q2)
-        else:
-            q_min = q1
-        loss_actor = - torch.mean(q_min - logp_pi * self.alpha)
-        self.optimizer_actor.zero_grad()
-        loss_actor.backward()
-        self.optimizer_actor.step()
+        for i, agent in enumerate(self.agents):
+            act, logp_pi = agent.actor(b["o"][:, self.obs_dim*i:(self.obs_dim)*(i+1)], sample=False)
+            actions = b["a"].clone()
+            actions[:, self.action_dim*i:self.action_dim*(i+1)] = act
+            #act_n.append(act)
+            #logp_pi_n.append(logp_pi)
 
-        if self.par.autotune:
-            with torch.no_grad():
-                _, logp_pi = self.actor(b["o"], sample=False)
-            alpha_loss = (-self.log_alpha * (logp_pi + self.par.target_entropy)).mean()
-            self.optimizer_alpha.zero_grad()
-            alpha_loss.backward()
-            self.optimizer_alpha.step()
-            self.alpha = self.log_alpha.exp().item()
+                #act = torch.cat(act_n, dim=-1)
+        # logp_pi = torch.stack(logp_pi_n, dim=0).sum(dim=0)
+
+
+        # for i, agent in enumerate(self.agents):
+            q1 = self.critics[0](b["o"], actions).squeeze()
+            q2 = self.critics[1](b["o"], actions).squeeze()
+            if self.use_min:
+                q_min = torch.min(q1, q2)
+            else:
+                q_min = q1
+            loss_actor = - torch.mean(q_min - logp_pi * self.agents[0].alpha)
+            agent.optimizer_actor.zero_grad()
+            loss_actor.backward()
+            # print(str(loss_actor) + "---" + str(torch.mean(q_min)))
+            agent.optimizer_actor.step()
+
+        # for agent in self.agents:
+            #
+            # if self.par.autotune:
+            #     with torch.no_grad():
+            #         _, logp_pi = agent.actor(b["o"], sample=False)
+            #     alpha_loss = (-agent.log_alpha * (logp_pi + self.par.target_entropy)).mean()
+            #     agent.optimizer_alpha.zero_grad()
+            #     alpha_loss.backward()
+            #     agent.optimizer_alpha.step()
+            #     agent.alpha = agent.log_alpha.exp().item()
         for par in self.critics[0].parameters():
             par.requires_grad = True
+        for par in self.critics[1].parameters():
+            par.requires_grad = True
+
+    def get_batch_single_agent(self, batch, name, i):
+        return batch[name][:]
 
     def update_critics(self, b):
         with torch.no_grad():
-            next_a, next_logp_pi = self.actor_target(b["o_next"], sample=False)
+            next_a_n = []
+            next_logp_pi_n = []
+            for i, agent in enumerate(self.agents):
+                next_a, next_logp_pi = agent.actor_target(b["o_next"][:, self.obs_dim*i:(self.obs_dim)*(i+1)], sample=False)
+                next_a_n.append(next_a)
+                next_logp_pi_n.append(next_logp_pi)
+            next_a = torch.cat(next_a_n, dim=-1)
+            next_logp_pi = torch.stack(next_logp_pi_n, dim=0).sum(dim=0)
             min_next_Q = torch.min(
                 *[critic_target(b["o_next"], next_a).squeeze() for critic_target in self.critics_target])
-            y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.alpha * next_logp_pi)
+            y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.agents[0].alpha * next_logp_pi)
             # if np.random.random()<0.05:
             #     self.logger.info(y)
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y, f_hyst=self.par.f_hyst)*0.5 #0.5 is to correspond with code of Janner
+            # print(torch.mean(min_next_Q))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

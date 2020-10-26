@@ -77,8 +77,8 @@ class EnvWrapper:
             self.observation_space = self.env.observation_space 
             # Particle suite does not have proper action spaces, hardcoded in here. 
             for act_space in self.action_space:
-                act_space.low = np.zeros(8)
-                act_space.high =  np.zeros(8) + 1.0
+                act_space.low = np.zeros(8) - 1.0
+                act_space.high = np.zeros(8) + 1.0
                 act_space.shape = (8,)
                 
     def step(self, actions: list):

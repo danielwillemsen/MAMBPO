@@ -109,9 +109,9 @@ class CircleEnv():
             # Collissions
             for agent2 in self.agents:
                 if agent2 is not agent:
-                    if np.linalg.norm(agent2.pos - agent.pos)<0.2:
-                        rewards[i] -= 5.
-                        rewards_collision[i] -= 5.
+                    if np.linalg.norm(agent2.pos - agent.pos)<0.1:
+                        rewards[i] -= 1.
+                        rewards_collision[i] -= 1.
 
                         # print("Collision!")
                     # elif np.linalg.norm(agent2.pos - agent.pos)<0.4:

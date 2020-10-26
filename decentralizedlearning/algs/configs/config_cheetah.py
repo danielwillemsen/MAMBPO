@@ -129,6 +129,32 @@ def get_hyperpar(env, alg):
                            target_entropy=-1.0,
                            name=env)
 
+    if env=="MA" and alg=="SAC":
+        return SACHyperPar(hidden_dims_actor=(128, 128),
+                           hidden_dims_critic=(128, 128),
+                           hidden_dims_model=(200, 200, 200),
+                           gamma=0.95,
+                           tau=0.01,
+                           lr_actor=0.01,
+                           lr_critic=0.01,
+                           lr_model=0.01,
+                           l2_norm=0.0,
+                           step_random=500,
+                           update_every_n_steps=100,
+                           update_model_every_n_steps=250,
+                           n_steps=1,
+                           delay=1,
+                           n_models=10,
+                           batch_size=1024,
+                           weight_decay=0.0,
+                           alpha=0.02,
+                           use_model=False,
+                           use_model_stochastic=True,
+                           diverse=True,
+                           autotune=False,
+                           target_entropy=-1.0,
+                           name=env)
+
     if env=="custom" and alg=="model":
         return SACHyperPar(hidden_dims_actor=(256, 256),
                            hidden_dims_critic=(256, 256),

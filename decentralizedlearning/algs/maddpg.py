@@ -6,27 +6,31 @@ import random
 import numpy as np
 from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import ActorCritic
-from decentralizedlearning.algs.utils import ReplayBuffer
+from decentralizedlearning.algs.utils import EfficientReplayBuffer as ReplayBuffer
 from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.models import Model
 from decentralizedlearning.algs.utils import check_cuda
 from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 from decentralizedlearning.algs.utils import update_target_networks
+from decentralizedlearning.algs.utils import Actor
+from decentralizedlearning.algs.utils import Critic
+from decentralizedlearning.algs.utils import convert_multi_inputs_to_tensors
+
 
 class HDDPGHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (64, 64)))
+                                             (128, 128)))
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
-                                              (64, 64)))
+                                              (128, 128)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",
                                              (128, 128, 128)))
         self.use_OU = bool(kwargs.get("use_OU", False))
         self.gamma = float(kwargs.get("gamma", 0.95))
         self.tau = float(kwargs.get("tau", 0.005))
         self.delay = int(kwargs.get("delay", 2))
-        self.lr_actor = float(kwargs.get("lr_actor", 0.01))
-        self.lr_critic = float(kwargs.get("lr_critic", 0.01))
+        self.lr_actor = float(kwargs.get("lr_actor", 0.001))
+        self.lr_critic = float(kwargs.get("lr_critic", 0.001))
         self.lr_model = float(kwargs.get("lr_model", 0.0001))
         self.l2_norm = float(kwargs.get("l2_norm", 0.0))
         self.step_random = int(kwargs.get("step_random", 500))
@@ -42,8 +46,62 @@ class HDDPGHyperPar:
         self.use_double = bool(kwargs.get("use_double", False))
         self.use_real_model = bool(kwargs.get("use_real_model", False))
 
-class HDDPGAgent:
-    def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
+class MADDPGAgent:
+    def __init__(self, obs_dim, hidden_dims_actor, action_dim, device, par):
+        self.step_i = 0
+        self.par = par
+        self.device = device
+        self.action_dim = action_dim
+        self.actor = Actor(obs_dim, hidden_dims_actor, action_dim)
+        self.actor_target = copy.deepcopy(self.actor)
+        self.actor.to(device)
+        self.actor_target.to(device)
+        self.model = None
+        self.optimizer_actor = torch.optim.Adam(self.actor.parameters(),
+                                                lr=self.par.lr_actor,
+                                                weight_decay=self.par.weight_decay)
+        for par in self.actor_target.parameters():
+            par.requires_grad = False
+
+    def reset(self):
+        pass
+
+    def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
+        o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
+        if self.step_i > self.par.step_random:
+            action = self.select_action(o, "noisy")
+        else:
+            action = self.select_action(o, "random")
+
+        # Update previous action and observations
+        self.o_old = o
+
+        if action.size() == torch.Size([]):
+            self.a_old = action.unsqueeze(0)
+        else:
+            self.a_old = action
+
+        # print(r)
+        return action.detach().cpu().numpy()
+
+    def select_action(self, o, method):
+        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
+        if method == "random":
+            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
+
+        with torch.no_grad():
+            action = self.actor(o.unsqueeze(0)).squeeze()
+            if method == "noisy":
+                if self.par.use_OU:
+                    NotImplementedError()
+                else:
+                    action = action + torch.randn(action.size(), dtype=torch.float, device=self.device) * 0.3
+                    # print(action)
+                action = torch.clamp(action, -1.0, 1.0)
+        return action
+
+class MADDPG:
+    def __init__(self, n_agents, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
         self.device = check_cuda()
 
@@ -52,16 +110,17 @@ class HDDPGAgent:
         else:
             self.par = HDDPGHyperPar(**kwargs)
 
-
+        self.obs_dim = obs_dim
+        self.n_agents = n_agents
         self.action_dim = action_dim
 
-        self.ac = ActorCritic(obs_dim, action_dim, hidden_dims_actor=self.par.hidden_dims_actor, hidden_dims_critic=self.par.hidden_dims_critic)
-        self.ac_target = copy.deepcopy(self.ac)
+        self.critic = Critic((obs_dim + action_dim)*n_agents, self.par.hidden_dims_critic)
+        self.critic_target = copy.deepcopy(self.critic)
 
-        self.ac.to(self.device)
-        self.ac_target.to(self.device)
+        self.critic.to(self.device)
+        self.critic_target.to(self.device)
 
-        for par in self.ac_target.parameters():
+        for par in self.critic_target.parameters():
             par.requires_grad = False
 
         if self.par.use_OU:
@@ -71,9 +130,10 @@ class HDDPGAgent:
 
         self.o_old = None
         self.a_old = None
+        self.agents = [MADDPGAgent(obs_dim, self.par.hidden_dims_actor, action_dim, self.device, self.par) for i in range(n_agents)]
 
-        self.optimizer_critic = torch.optim.Adam(self.ac.critic.parameters(), lr=self.par.lr_critic, amsgrad=True, weight_decay=self.par.l2_norm)
-        self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=self.par.lr_actor, amsgrad=True, weight_decay=self.par.l2_norm)
+        self.optimizer_critic = torch.optim.Adam(self.critic.parameters(), lr=self.par.lr_critic, amsgrad=True, weight_decay=self.par.l2_norm)
+        # self.optimizer_actor = torch.optim.Adam(self.ac.actor.parameters(), lr=self.par.lr_actor, amsgrad=True, weight_decay=self.par.l2_norm)
 
         # Initialize models
         if self.par.use_model:
@@ -96,14 +156,15 @@ class HDDPGAgent:
         if self.par.use_OU:
             self.ou.reset()
 
-    def step(self, o, r, eval=False, done=False, generate_val_data=False, **kwargs) -> np.ndarray:
-        o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
-
+    def step(self, o, r, a, eval=False, done=False, generate_val_data=False, **kwargs):
+        o, r, done, a = convert_multi_inputs_to_tensors(o, r, done, a, self.device)
+        for agent in self.agents:
+            agent.step_i += 1
         # If evaluation mode: only select action and exit.
-        if eval:
-            action = self.ac.actor(o.unsqueeze(0)).squeeze()
-            action = torch.clamp(action, -1., 1.0)
-            return action.detach().numpy()
+        # if eval:
+        #     action = self.ac.actor(o.unsqueeze(0)).squeeze()
+        #     action = torch.clamp(action, -1., 1.0)
+        #     return action.detach().numpy()
 
         # If not in evaluation mode:
         # Update buffer with new observations
@@ -121,23 +182,12 @@ class HDDPGAgent:
             for i in range(self.par.n_steps):#*self.par.update_every_n_steps):
                 self.update_step()
 
-        # Select Action
-        if self.i_step > self.par.step_random:
-            action = self.select_action(o, "noisy")
-        else:
-            action = self.select_action(o, "random")
-
         # Update previous action and observations
         self.o_old = o
-
-        if action.size() == torch.Size([]):
-            self.a_old = action.unsqueeze(0)
-        else:
-            self.a_old = action
-
+        self.a_old = a
         self.i_step += 1
         # print(r)
-        return action.detach().cpu().numpy()
+        return
 
     def update_step(self):
         # Sample Minibatch
@@ -155,7 +205,8 @@ class HDDPGAgent:
         # Update Actor
         self.update_actor(b)
         # Update Target Networks
-        update_target_networks([self.ac], [self.ac_target], self.par.tau)
+        update_target_networks([agent.actor for agent in self.agents] + [self.critic],
+                               [agent.actor_target for agent in self.agents] + [self.critic_target], self.par.tau)
 
     def sample_from_real_model(self):
         # Sample Minibatch
@@ -181,39 +232,55 @@ class HDDPGAgent:
         return b
 
     def update_actor(self, b):
-        for par in self.ac.critic.parameters():
+        for par in self.critic.parameters():
             par.requires_grad = False
-        self.optimizer_actor.zero_grad()
-        loss_actor = -torch.mean(self.ac.critic(b["o"], self.ac.actor(b["o"])))
+        act_n = []
+        for i, agent in enumerate(self.agents):
+            act = agent.actor(b["o"][:, self.obs_dim*i:(self.obs_dim)*(i+1)])
+            act_n.append(act)
+            agent.optimizer_actor.zero_grad()
+
+        act = torch.cat(act_n, dim=-1)
+        loss_actor = -torch.mean(self.critic(b["o"], act))
         loss_actor.backward()
-        self.optimizer_actor.step()
-        for par in self.ac.critic.parameters():
+        print(loss_actor)
+        save = copy.deepcopy(self.agents[0].actor.net[0].weight)
+        # print(self.agents[0].actor.net[0].weight[0:5])
+        for i, agent in enumerate(self.agents):
+            agent.optimizer_actor.step()
+        for i, agent in enumerate(self.agents):
+            act = agent.actor(b["o"][:, self.obs_dim*i:(self.obs_dim)*(i+1)])
+            act_n.append(act)
+            agent.optimizer_actor.zero_grad()
+        loss_actor = -torch.mean(self.critic(b["o"], act))
+        print(loss_actor)
+        print("Change: " + str(torch.sum(save-self.agents[0].actor.net[0].weight)))
+        for par in self.critic.parameters():
             par.requires_grad = True
 
     def update_critic(self, b):
         self.optimizer_critic.zero_grad()
         with torch.no_grad():
-            y = b["r"].unsqueeze(-1) + (1 - b["done"].unsqueeze(-1)) * self.par.gamma * self.ac_target.critic(b["o_next"],
-                                                                                                self.ac_target.actor(
-                                                                                                    b["o_next"]))
-        loss_c = loss_critic(self.ac.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
+            next_a_n = []
+            for i, agent in enumerate(self.agents):
+                next_a = agent.actor_target(b["o_next"][:, self.obs_dim*i:(self.obs_dim)*(i+1)])
+                next_a_n.append(next_a)
+            next_a = torch.cat(next_a_n, dim=-1)
+
+            y = b["r"].unsqueeze(-1) + (1 - b["done"].unsqueeze(-1)) * self.par.gamma * self.critic_target(b["o_next"],
+                                                                                                next_a)
+        loss_c = loss_critic(self.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
+        save = copy.deepcopy(self.agents[0].actor.net[0].weight)
+
         loss_c.backward()
+        print(loss_c)
         self.optimizer_critic.step()
+        loss_c = loss_critic(self.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
+        print(loss_c)
+        print("Change2: " + str(torch.sum(save-self.agents[0].actor.net[0].weight)))
 
-    def select_action(self, o, method):
-        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
-        if method == "random":
-            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
 
-        with torch.no_grad():
-            action = self.ac.actor(o.unsqueeze(0)).squeeze()
-            if method == "noisy":
-                if self.par.use_OU:
-                    action = action + torch.Tensor(self.ou.noise())[0]
-                else:
-                    action = action + torch.randn(action.size(), dtype=torch.float, device=self.device) * 0.3
-                action = torch.clamp(action, -1.0, 1.0)
-        return action
+
 
     def update_models(self):
         samples = self.buffer.sample_tensors(n=self.par.batch_size)
