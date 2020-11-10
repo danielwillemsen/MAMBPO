@@ -461,16 +461,44 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
                 plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
                                  data_temp['y'] + data_temp['std'], color=colors[alg],
                                  alpha=0.25)
-    steps = np.arange(0,20001,100)
+    steps = np.arange(0,15000,50)
     for log in logs:
         data = torch.load("../logs/" + log + ".p", map_location="cpu")
         for key in data.keys():
-                plot_name(data, key, steps, var, name=log, use_moving_average=use_moving_average)
+                plot_name_ep(data, key, steps, var, name=log, use_moving_average=use_moving_average)
     plt.xlim(0, steps[-1])
-    plt.xlabel("Timestep")
+    plt.xlabel("Episode")
+    # plt.ylim(-350,-130)
     plt.ylabel(var_name)
     plt.legend()
     plt.show()
+
+def plot_name_ep(data, key, steps, var, name=None, use_moving_average=False):
+    if not name:
+        name=key + "(ours)"
+    values = []
+    for run in data[key]["runs"]:
+        values.append([])
+        steps_var = [val[0] for val in run[var]]
+        for step in steps:
+            idx = find_nearest(steps_var, step)
+            values[-1].append(np.mean(run[var][idx][3]))
+        values[-1] = np.array(values[-1])
+    mean_scores = np.mean(values, axis=0)
+    std_scores = np.std(values, axis=0)
+    if use_moving_average:
+        mean_scores = moving_average(mean_scores)
+        std_scores = moving_average(std_scores)
+    if "actor" in name:
+        name = "MASAC (Shared Critic and Actor)"
+    elif "critic" in name:
+        name = "MASAC (Shared Critic)"
+    elif "sac" in name:
+        name = "SAC"
+    else:
+        name = "MASAC"
+    plt.plot(steps, mean_scores, label=name)
+    plt.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25)
 
 def plot_name(data, key, steps, var, name=None, use_moving_average=False):
     if not name:
@@ -727,11 +755,12 @@ logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
 logs = [ "4_agent", "4_agent_lowlr"]
 logs = [ "4_agent_new", "4_agent_lowlr"]
 
-logs = ["4_agent_0", "4_agent_1", "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
+logs = ["particle_long", "particle_long_common_critic", "particle_long_common_critic_common_actor", "particle_long_sac"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
+logs = ["particle_comm", "particle_comm_sac"]#, "particle_long_common_critic_common_actor", "particle_long_sac"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
 
-plot_all_run_logs(logs, var="score_target", plot_janner=False, use_moving_average=True, var_name="Reward Target")
-plot_all_run_logs(logs, var="score_collision", plot_janner=False, use_moving_average=True, var_name="Reward Collisions")
-plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward Total")
+plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+# plot_all_run_logs(logs, var="score_collision", plot_janner=False, use_moving_average=True, var_name="Reward Collisions")
+# plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward Total")
 
 # # plot_single_run(data, plot_janner=True, var="score_greedy")
 # plot_all_run(data, plot_janner=True, var="score_greedy")

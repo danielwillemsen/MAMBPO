@@ -8,8 +8,8 @@ import gym
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from waypoints import WaypointsEnv
-from circle2 import CircleEnv
-
+from circle import CircleEnv
+from make_env import make_env
 try:
     from crossing import CrossingEnv
     from continuouscrossing import ContinuousCrossingEnv
@@ -67,19 +67,20 @@ class EnvWrapper:
             print(self.env)
         # Setup environment for "particle" suite.
         if suite=="particle":
-            self.scenario = scenarios.load(env_name).Scenario()
-            self.world = self.scenario.make_world()
-            self.env = MultiAgentEnv(self.world, self.scenario.reset_world,
-                                     self.scenario.reward, self.scenario.observation, 
-                                     info_callback=None, shared_viewer=False)
+            self.env = make_env(env_name, benchmark=False)
+            # self.scenario = scenarios.load(env_name).Scenario()
+            # self.world = self.scenario.make_world()
+            # self.env = MultiAgentEnv(self.world, self.scenario.reset_world,
+            #                          self.scenario.reward, self.scenario.observation,
+            #                          info_callback=self.scenario.info_callback, shared_viewer=False)
             self.action_space = self.env.action_space
             self.n_agents = len(self.action_space)
             self.observation_space = self.env.observation_space 
-            # Particle suite does not have proper action spaces, hardcoded in here. 
+            # Particle suite does not have proper action spaces, hardcoded in here. ->>> wrong. it is just discrete.
             for act_space in self.action_space:
-                act_space.low = np.zeros(8) - 1.0
-                act_space.high = np.zeros(8) + 1.0
-                act_space.shape = (8,)
+                # act_space.low = np.zeros(8) - 1.0
+                # act_space.high = np.zeros(8) + 1.0
+                act_space.shape = (act_space.n,)
                 
     def step(self, actions: list):
         """step. Takes a step in the environment given a list of actions, one for

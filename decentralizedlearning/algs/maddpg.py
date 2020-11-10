@@ -178,7 +178,7 @@ class MADDPG:
                     self.update_models()
 
         # Update actors and critics
-        if self.i_step % self.par.update_every_n_steps == 0 and self.buffer.len() > self.par.batch_size:
+        if self.i_step % self.par.update_every_n_steps == 0 and self.buffer.len() > 10000:#self.par.batch_size:
             for i in range(self.par.n_steps):#*self.par.update_every_n_steps):
                 self.update_step()
 
@@ -243,18 +243,18 @@ class MADDPG:
         act = torch.cat(act_n, dim=-1)
         loss_actor = -torch.mean(self.critic(b["o"], act))
         loss_actor.backward()
-        print(loss_actor)
-        save = copy.deepcopy(self.agents[0].actor.net[0].weight)
+        # print(loss_actor)
+        # save = copy.deepcopy(self.agents[0].actor.net[0].weight)
         # print(self.agents[0].actor.net[0].weight[0:5])
-        for i, agent in enumerate(self.agents):
-            agent.optimizer_actor.step()
-        for i, agent in enumerate(self.agents):
-            act = agent.actor(b["o"][:, self.obs_dim*i:(self.obs_dim)*(i+1)])
-            act_n.append(act)
-            agent.optimizer_actor.zero_grad()
-        loss_actor = -torch.mean(self.critic(b["o"], act))
-        print(loss_actor)
-        print("Change: " + str(torch.sum(save-self.agents[0].actor.net[0].weight)))
+        # for i, agent in enumerate(self.agents):
+        #     agent.optimizer_actor.step()
+        # for i, agent in enumerate(self.agents):
+        #     act = agent.actor(b["o"][:, self.obs_dim*i:(self.obs_dim)*(i+1)])
+        #     act_n.append(act)
+        #     agent.optimizer_actor.zero_grad()
+        # loss_actor = -torch.mean(self.critic(b["o"], act))
+        # print(loss_actor)
+        # print("Change: " + str(torch.sum(save-self.agents[0].actor.net[0].weight)))
         for par in self.critic.parameters():
             par.requires_grad = True
 
@@ -270,15 +270,12 @@ class MADDPG:
             y = b["r"].unsqueeze(-1) + (1 - b["done"].unsqueeze(-1)) * self.par.gamma * self.critic_target(b["o_next"],
                                                                                                 next_a)
         loss_c = loss_critic(self.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
-        save = copy.deepcopy(self.agents[0].actor.net[0].weight)
-
+        if np.random.rand() < 1.0:
+            print("Mean Q:", torch.mean(y))
+            print("LOSSQ:" + str(loss_c))
         loss_c.backward()
-        print(loss_c)
+        # print(loss_c)
         self.optimizer_critic.step()
-        loss_c = loss_critic(self.critic(b["o"], b["a"]), y, f_hyst=self.par.f_hyst)
-        print(loss_c)
-        print("Change2: " + str(torch.sum(save-self.agents[0].actor.net[0].weight)))
-
 
 
 

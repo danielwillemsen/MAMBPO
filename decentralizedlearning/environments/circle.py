@@ -34,7 +34,7 @@ class Target:
         pass
 
 class CircleEnv():
-    def __init__(self, n_agents=2):
+    def __init__(self, n_agents=2, **kwargs):
         self.dt = 0.1
         self.max_a = np.ones(2)
         self.n = n_agents
@@ -72,24 +72,24 @@ class CircleEnv():
                     rewards[i] += 1.0
                     self.targets[i].reset()
                 else:
-                    rewards[i] += -0.2 * np.linalg.norm(agent.pos - self.targets[i].pos)
+                    rewards[i] += 1-0.2 * np.linalg.norm(agent.pos - self.targets[i].pos)
             else:
-                if np.linalg.norm(self.targets[i].pos - agent.pos)<0.00:
+                if np.linalg.norm(self.targets[i].pos - agent.pos)<0.0:
                     rewards[i] += 1.0
                 else:
                     #rewards[i] -= 0.1/np.linalg.norm(self.targets[i].pos - agent.pos)
-                    rewards[i] -= np.linalg.norm(self.targets[i].pos - agent.pos)**(1./2.)
+                    rewards[i] += 1.-np.linalg.norm(self.targets[i].pos - agent.pos)
 
             # Collissions
             for agent2 in self.agents:
                 if agent2 is not agent:
-                    if np.linalg.norm(agent2.pos - agent.pos)<0.0:
+                    if np.linalg.norm(agent2.pos - agent.pos)<0.2:
                         rewards[i] -= 1.0
-                        print("Collision!")
-
-                    else:
-                        #rewards[i] -= 0.1/np.linalg.norm(agent2.pos - agent.pos)
-                        rewards[i] += np.linalg.norm(agent2.pos - agent.pos)**(1./2.)
+                        # print("Collision!")
+                    #
+                    # else:
+                    #     #rewards[i] -= 0.1/np.linalg.norm(agent2.pos - agent.pos)
+                    #     rewards[i] += np.linalg.norm(agent2.pos - agent.pos)**(1./2.)
                     # print("Collision!")
             if self.i_step % 50 == 0:
                 for target in self.targets:

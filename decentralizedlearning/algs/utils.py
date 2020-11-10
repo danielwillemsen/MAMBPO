@@ -535,7 +535,7 @@ class ActorCritic(nn.Module):
         super().__init__()
         self.actor = Actor(obs_dim, hidden_dims_actor, action_dim)
         self.critic = Critic(obs_dim + action_dim, hidden_dims_critic)
-
+        self.action_dim = action_dim
 
 class Actor(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
@@ -550,8 +550,23 @@ class Actor(nn.Module):
     def forward(self, observation):
         return torch.tanh(self.net(observation))
 
+class NonStochActor(nn.Module):
+    def __init__(self, input_dim, hidden_dims, output_dim, device):
+        super().__init__()
+        layers = []
+        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
+        for i in range(len(hidden_dims)-1):
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
+        layers += [nn.Linear(hidden_dims[-1], output_dim), nn.Tanh()]
+        self.net = nn.Sequential(*layers)
+        self.device = device
+
+    def forward(self, observation, sample=True, greedy=False):
+        res = self.net(observation)
+        return torch.tanh(self.net(observation))
+
 class StochActor(nn.Module):
-    def __init__(self, input_dim, hidden_dims, output_dim):
+    def __init__(self, input_dim, hidden_dims, output_dim, device, discrete=False):
         super().__init__()
         layers = []
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
@@ -561,23 +576,59 @@ class StochActor(nn.Module):
         self.net = nn.Sequential(*layers)
         self.mu_lay = nn.Linear(hidden_dims[-1], output_dim)
         self.sigma_lay = nn.Linear(hidden_dims[-1], output_dim)
+        self.action_dim = output_dim
+        self.device = device
+        self.discrete = discrete
 
     def forward(self, observation, sample=True, greedy=False):
         res = self.net(observation)
         mu, sigma = self.mu_lay(res), torch.exp(torch.clamp(self.sigma_lay(res), -20., 2.))
-        pi_dist = torch.distributions.normal.Normal(mu, sigma)
-        if greedy:
-            act = mu
-        else:
-            act = pi_dist.rsample()
+        if not self.discrete:
+            pi_dist = torch.distributions.normal.Normal(mu, sigma)
+            if greedy:
+                act = mu
+            else:
+                act = pi_dist.rsample()
 
+            if not sample:
+                logp_pi = pi_dist.log_prob(act).sum(dim=-1)
+                logp_pi -= (2 * (np.log(2) - act - F.softplus(-2 * act))).sum(dim=1)
+                return torch.tanh(act), logp_pi
+            else:
+                return torch.tanh(act)
+
+        # If discrete, use Gumbel-Softmax
+        noise = torch.distributions.uniform.Uniform(torch.zeros(mu.shape),torch.zeros(mu.shape)+1.0)
+        noise_sample = noise.rsample().to(self.device)
+        eps = 1e-10
+        act = torch.nn.functional.softmax(mu - torch.log(-torch.log(noise_sample + eps)+eps), -1)
+        if not act.max() < 1.01:
+            print("nan")
+        # pi_dist = torch.distributions.relaxed_bernoulli.LogitRelaxedBernoulli(torch.tensor(1.0), logits=mu)
+        # act = pi_dist.sample()
+        # print(observation)
+        # print(mu)
+        # print(act)
         if not sample:
-            logp_pi = pi_dist.log_prob(act).sum(dim=-1)
-            logp_pi -= (2 * (np.log(2) - act - F.softplus(-2 * act))).sum(dim=1)
-            return torch.tanh(act), logp_pi
+            logp_pi = -(-torch.log(torch.nn.functional.softmax(mu,-1)+eps)*act).sum(dim=-1)
+            if not logp_pi.max() < 100000000.:
+                print("nan2")
+            # logp_pi = pi_dist.log_prob(act).sum(dim=-1)*0.
+            return act, logp_pi
         else:
-            return torch.tanh(act)
+            return act
 
+    def select_action(self, o, method):
+        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
+        if method == "random":
+            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
+
+        with torch.no_grad():
+            if method == "greedy":
+                action = self(o.unsqueeze(0), greedy=True).squeeze()
+            else:
+                action = self(o.unsqueeze(0), greedy=False).squeeze()
+            return action
 
 class Critic(nn.Module):
     def __init__(self, input_dim, hidden_dims):
@@ -596,6 +647,7 @@ class Critic(nn.Module):
 
 def loss_critic(val, target, f_hyst=1.0):
     diffs = target - val
+    # print("loss critic", torch.mean(diffs**2))
     if not np.isclose(f_hyst, 1.0):
         diffs[diffs < 0] *= f_hyst
     return torch.mean(diffs**2)

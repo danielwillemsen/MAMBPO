@@ -23,7 +23,7 @@ class Target:
         self.pos = np.random.random(size=(2))
 
 class WaypointsEnv():
-    def __init__(self, n_agents=2):
+    def __init__(self, n_agents=2, **kwargs):
         self.dt = 0.1
         self.max_a = np.ones(2)
         self.n = n_agents

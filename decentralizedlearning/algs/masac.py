@@ -58,27 +58,26 @@ class SACHyperPar:
         self.use_multistep_reg = bool(kwargs.get("use_multistep_reg", False))
         self.use_degraded_sim = bool(kwargs.get("use_degraded_sim", False))
         self.name = str(kwargs.get("name", "cheetah"))
-        self.use_common_policy = bool(kwargs.get("use_common_policy", False))
+        self.use_common_actor = bool(kwargs.get("use_common_actor", False))
+        self.use_common_critic = bool(kwargs.get("use_common_critic", False))
+        self.use_stochastic_actor = bool(kwargs.get("use_stochastic_actor", True))
 
 class MASACAgent:
-    def __init__(self, obs_dim, hidden_dims_actor, action_dim, device, par, common_policy=None, common_policy_target=None):
+    def __init__(self, action_dim, device, par,
+                 actor, actor_target, actor_optimizer,
+                 critics, critics_target, critics_optimzer):
         self.step_i = 0
         self.par = par
         self.device = device
         self.action_dim = action_dim
-        if not common_policy:
-            self.actor = StochActor(obs_dim, hidden_dims_actor, action_dim)
-            self.actor_target = copy.deepcopy(self.actor)
-            self.actor.to(device)
-            self.actor_target.to(device)
-        else:
-            self.actor = common_policy
-            self.actor_target = common_policy_target
+        self.actor = actor
+        self.actor_target = actor_target
+        self.actor_optimizer = actor_optimizer
 
+        self.critics = critics
+        self.critics_target = critics_target
+        self.critics_optimizer = critics_optimzer
         self.model = None
-        self.optimizer_actor = torch.optim.Adam(self.actor.parameters(),
-                                                lr=self.par.lr_actor,
-                                                weight_decay=self.par.weight_decay)
         for par in self.actor_target.parameters():
             par.requires_grad = False
         if self.par.autotune:
@@ -91,62 +90,28 @@ class MASACAgent:
             
     def step(self, o, r, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
         o, r, done = convert_inputs_to_tensors(o, r, done, self.device)
-        # if eval:
-        #     # Select greedy action and return
-        #     if greedy_eval:
-        #         action = self.select_action(o, "greedy")
-        #     else:
-        #         action = self.select_action(o, "noisy")
-        #     return action.detach().cpu().numpy()
-        #
-        # if generate_val_data:
-        #     # Select greedy action and return
-        #     action = self.select_action(o, "noisy")
-        #     if self.o_old is not None:
-        #         self.val_buffer.add((self.o_old, self.a_old, r, o, done))
-        #     self.o_old = o
-        #     if action.size() == torch.Size([]):
-        #         self.a_old = action.unsqueeze(0)
-        #     else:
-        #         self.a_old = action
-        #     return action.detach().cpu().numpy()
         # Select Action
         if eval:
-            action = self.select_action(o, "greedy")
+            action = self.actor.select_action(o, "greedy")
         elif self.step_i > self.par.step_random:
-            action = self.select_action(o, "noisy")
+            action = self.actor.select_action(o, "noisy")
         else:
-            action = self.select_action(o, "random")
-
-        self.o_old = o
-        self.s_old = s
-        if action.size() == torch.Size([]):
-            self.a_old = action.unsqueeze(0)
-        else:
-            self.a_old = action
+            action = self.actor.select_action(o, "random")
         return action.detach().cpu().numpy()
 
     def reset(self):
         return
 
-    def select_action(self, o, method):
-        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
-        if method == "random":
-            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
-
-        with torch.no_grad():
-            if method == "greedy":
-                action = self.actor(o.unsqueeze(0), greedy=True).squeeze()
-            else:
-                action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
-            return action
 
 
 class MASAC:
-    def __init__(self, n_agents, obs_dim, action_dim, hyperpar=None, **kwargs):
+    def __init__(self, n_agents, observation_space, action_space, hyperpar=None, discrete=False, **kwargs):
         # Initialize arguments
-        self.obs_dim = obs_dim
-        self.obs_i_per_agent = [[i+i_agent*obs_dim for i in range(obs_dim)] for i_agent in range(n_agents)]
+        self.discrete = discrete
+        self.obs_dims = [obs_dim.shape[0] for obs_dim in observation_space]
+        self.action_dims = [action_dim.shape[0] for action_dim in action_space]
+        self.act_i_per_agent = list(np.cumsum([0]+self.action_dims))
+        self.obs_i_per_agent = list(np.cumsum([0]+self.obs_dims))
         self.logger = logging.getLogger('root')
         self.n_agents = n_agents
         if torch.cuda.is_available():
@@ -165,32 +130,15 @@ class MASAC:
             self.par = SACHyperPar(**kwargs)
 
         self.logger.info(self.par.__dict__)
-        self.action_dim = action_dim
+        self.action_dim = self.action_dims[0]
+        self.obs_dim = self.obs_dims[0]
 
-        if not self.par.use_common_policy:
-            # Initialize acting agents actor
-            self.agents = [MASACAgent(obs_dim, self.par.hidden_dims_actor, action_dim, self.device, self.par) for i in range(n_agents)]
-        else:
-            actor = StochActor(obs_dim, self.par.hidden_dims_actor, action_dim)
-            actor_target = copy.deepcopy(actor)
-            self.agents = [MASACAgent(obs_dim, self.par.hidden_dims_actor, action_dim, self.device, self.par,
-                                      common_policy=actor, common_policy_target=actor_target) for i in range(n_agents)]
-
-        # self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim)
-        # self.actor_target = copy.deepcopy(self.actor)
-        #self.actor.to(self.device)
-        #self.actor_target.to(self.device)
-
-        #self.optimizer_actor =
-
-
-
-
+        self.agents = self.initialize_agents(self.action_dim, n_agents, self.obs_dim)
 
         if self.par.use_model:
-            self.model = EnsembleModel(obs_dim + action_dim,
+            self.model = EnsembleModel(np.sum(self.obs_dims) + np.sum(self.action_dims),
                                        self.par.hidden_dims_model,
-                                       obs_dim,
+                                       np.sum(self.obs_dims),
                                        self.par.n_models,
                                        monitor_losses=self.par.monitor_losses,
                                        use_stochastic=self.par.use_model_stochastic,
@@ -210,20 +158,6 @@ class MASAC:
             env_copy = kwargs.get("env_copy", None)
             self.model = DegradedSim(env_copy, degradation=0.0, bias=0.4, device=self.device)
             self.model_sample_buffer = StateBuffer(device=self.device)
-        # Initialize 2 critics
-        self.critics = []
-        self.critics_target = []
-        self.optimizer_critics = []
-        for k in range(2):
-            critic = Critic((obs_dim + action_dim)*n_agents, self.par.hidden_dims_critic)
-            critic.to(self.device)
-            self.critics.append(critic)
-            self.critics_target.append(copy.deepcopy(critic))
-            self.optimizer_critics.append(torch.optim.Adam(critic.parameters(),
-                                                           lr=self.par.lr_critic,
-                                                           weight_decay=self.par.weight_decay))
-            for par in self.critics_target[k].parameters():
-                par.requires_grad = False
 
         # Initialize noise
         if self.par.use_OU:
@@ -250,6 +184,50 @@ class MASAC:
 
 
         self.step_i = 0
+
+    def initialize_agents(self, action_dim, n_agents, obs_dim):
+        agents = []
+        if self.par.use_common_actor:
+            actor = StochActor(self.obs_dims[0], self.par.hidden_dims_actor, self.action_dims[0], discrete=self.discrete, device=self.device)
+            actor_target = copy.deepcopy(actor)
+            actor.to(self.device)
+            actor_target.to(self.device)
+            actor_optimizer = torch.optim.Adam(actor.parameters(),
+                                               lr=self.par.lr_actor,
+                                               weight_decay=self.par.weight_decay)
+        if self.par.use_common_critic:
+            critics = [Critic(np.sum(self.obs_dims)+np.sum(self.action_dims), self.par.hidden_dims_critic) for i in range(2)]
+            critics_target = copy.deepcopy(critics)
+            critics_optimizers = []
+            for critic, critic_target in zip(critics, critics_target):
+                critic.to(self.device)
+                critic_target.to(self.device)
+                critics_optimizers.append(torch.optim.Adam(critic.parameters(),
+                                                           lr=self.par.lr_critic,
+                                                           weight_decay=self.par.weight_decay))
+        for i_agent in range(n_agents):
+            if not self.par.use_common_actor:
+                actor = StochActor(self.obs_dims[i_agent], self.par.hidden_dims_actor, self.action_dims[i_agent], discrete=self.discrete, device=self.device)
+                actor_target = copy.deepcopy(actor)
+                actor.to(self.device)
+                actor_target.to(self.device)
+                actor_optimizer = torch.optim.Adam(actor.parameters(),
+                                                   lr=self.par.lr_actor,
+                                                   weight_decay=0.001)
+            if not self.par.use_common_critic:
+                critics = [Critic(np.sum(self.obs_dims)+np.sum(self.action_dims), self.par.hidden_dims_critic) for i in range(2)]
+                critics_target = copy.deepcopy(critics)
+                critics_optimizers = []
+                for critic, critic_target in zip(critics, critics_target):
+                    critic.to(self.device)
+                    critic_target.to(self.device)
+                    critics_optimizers.append(torch.optim.Adam(critic.parameters(),
+                                                               lr=self.par.lr_critic,
+                                                               weight_decay=self.par.weight_decay))
+            agents.append(MASACAgent(self.action_dims[i_agent], self.device, self.par,
+                                     actor, actor_target, actor_optimizer,
+                                     critics, critics_target, critics_optimizers))
+        return agents
 
     def reset(self):
         self.o_old = None
@@ -287,21 +265,21 @@ class MASAC:
                     #self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
                 self.model.train_models(self.optimizer_model, self.real_buffer, multistep_buffer=self.multistep_buffer)
                 #self.model.generate_batch(self.real_buffer.sample_tensors())
-                if self.par.monitor_losses and self.step_i % (250) == 0:
-                    self.model.log_loss(self.real_buffer.sample_tensors(), "train")
-                    self.model.log_loss(self.val_buffer.sample_tensors(), "test")
-                    print(len(self.fake_buffer))
-        # if self.par.monitor_losses and self.step_i %(250) == 0:
-        #     self.logger.info("alpha:" + str(self.agents[0].alpha))
+                # if self.par.monitor_losses and self.step_i % (250) == 0:
+                #     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
+                #     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
 
-        if self.step_i % self.par.update_every_n_steps == 0:
+        if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*1000:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    batch_this_epoch = 1000#self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
-                    fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch), self.actor,
+                    batch_this_epoch = 2000#self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
+                    fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch),
+                                                                 [agent.actor for agent in self.agents],
                                                                  diverse=self.par.diverse,
-                                                                 batch_size=batch_this_epoch)  # self.par.batch_size)
+                                                                 batch_size=batch_this_epoch,
+                                                                 obs_i_per_agent=self.obs_i_per_agent,
+                                                                 act_i_per_agent=self.act_i_per_agent)  # self.par.batch_size)
                     self.fake_buffer.reallocate(size=batch_this_epoch*self.par.rollout_length)
                     for item in fake_samples:
                         self.fake_buffer.add_multiple(item)
@@ -321,9 +299,17 @@ class MASAC:
                         self.update_actor(b)
 
                         # Update Target Networks
-                        update_target_networks([agent.actor for agent in self.agents] + self.critics,
-                                               [agent.actor_target for agent in self.agents] + self.critics_target,
-                                               self.par.tau)
+                        if self.par.use_common_actor:
+                            update_target_networks([self.agents[0].actor], [self.agents[0].actor_target], self.par.tau)
+                        else:
+                            update_target_networks([agent.actor for agent in self.agents],
+                                                   [agent.actor_target for agent in self.agents],
+                                                   self.par.tau)
+                        if self.par.use_common_critic:
+                            update_target_networks(self.agents[0].critics, self.agents[0].critics_target, self.par.tau)
+                        else:
+                            for agent in self.agents:
+                                update_target_networks(agent.critics, agent.critics_target, self.par.tau)
 
         self.o_old = o
         self.s_old = s
@@ -338,34 +324,36 @@ class MASAC:
             self.par.rollout_length = int(max(min(y, self.par.rollout_schedule_val[1]), self.par.rollout_schedule_val[0]))
 
     def update_actor(self, b):
-        for par in self.critics[1].parameters():
-            par.requires_grad = False
-        for par in self.critics[0].parameters():
-            par.requires_grad = False
+        if self.par.use_common_critic:
+            for critic in self.agents[0].critics:
+                for par in critic.parameters():
+                    par.requires_grad = False
+        else:
+            for agent in self.agents:
+                for critic in agent.critics:
+                    for par in critic.parameters():
+                        par.requires_grad = False
 
         for i, agent in enumerate(self.agents):
-            act, logp_pi = agent.actor(b["o"][:, self.obs_dim*i:(self.obs_dim)*(i+1)], sample=False)
+            b = self.sample_batch()
+            act, logp_pi = agent.actor(b["o"][:, self.obs_i_per_agent[i]:self.obs_i_per_agent[i+1]], sample=False)
             actions = b["a"].clone()
-            actions[:, self.action_dim*i:self.action_dim*(i+1)] = act
-            #act_n.append(act)
-            #logp_pi_n.append(logp_pi)
+            # print(act)
+            actions[:, self.act_i_per_agent[i]:self.act_i_per_agent[i+1]] = act
 
-                #act = torch.cat(act_n, dim=-1)
-        # logp_pi = torch.stack(logp_pi_n, dim=0).sum(dim=0)
-
-
-        # for i, agent in enumerate(self.agents):
-            q1 = self.critics[0](b["o"], actions).squeeze()
-            q2 = self.critics[1](b["o"], actions).squeeze()
+            q1 = agent.critics[0](b["o"], actions).squeeze()
+            q2 = agent.critics[1](b["o"], actions).squeeze()
             if self.use_min:
                 q_min = torch.min(q1, q2)
             else:
                 q_min = q1
             loss_actor = - torch.mean(q_min - logp_pi * self.agents[0].alpha)
-            agent.optimizer_actor.zero_grad()
+            agent.actor_optimizer.zero_grad()
             loss_actor.backward()
+            torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), 0.5)
+
             # print(str(loss_actor) + "---" + str(torch.mean(q_min)))
-            agent.optimizer_actor.step()
+            agent.actor_optimizer.step()
 
         # for agent in self.agents:
             #
@@ -377,32 +365,88 @@ class MASAC:
             #     alpha_loss.backward()
             #     agent.optimizer_alpha.step()
             #     agent.alpha = agent.log_alpha.exp().item()
-        for par in self.critics[0].parameters():
-            par.requires_grad = True
-        for par in self.critics[1].parameters():
-            par.requires_grad = True
+        if self.par.use_common_critic:
+            for critic in self.agents[0].critics:
+                for par in critic.parameters():
+                    par.requires_grad = True
+        else:
+            for agent in self.agents:
+                for critic in agent.critics:
+                    for par in critic.parameters():
+                        par.requires_grad = True
 
     def get_batch_single_agent(self, batch, name, i):
         return batch[name][:]
 
     def update_critics(self, b):
-        with torch.no_grad():
-            next_a_n = []
-            next_logp_pi_n = []
-            for i, agent in enumerate(self.agents):
-                next_a, next_logp_pi = agent.actor_target(b["o_next"][:, self.obs_dim*i:(self.obs_dim)*(i+1)], sample=False)
-                next_a_n.append(next_a)
-                next_logp_pi_n.append(next_logp_pi)
-            next_a = torch.cat(next_a_n, dim=-1)
-            next_logp_pi = torch.stack(next_logp_pi_n, dim=0).sum(dim=0)
-            min_next_Q = torch.min(
-                *[critic_target(b["o_next"], next_a).squeeze() for critic_target in self.critics_target])
-            y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.agents[0].alpha * next_logp_pi)
+        if self.par.use_common_critic:
+            with torch.no_grad():
+                next_a_n = []
+                next_logp_pi_n = []
+                for i, agent in enumerate(self.agents):
+                    next_a, next_logp_pi = agent.actor(b["o_next"][:, self.obs_i_per_agent[i]:self.obs_i_per_agent[i+1]],
+                                                              sample=False)
+                    next_a_n.append(next_a)
+                    next_logp_pi_n.append(next_logp_pi)
+                next_a = torch.cat(next_a_n, dim=-1)
+                next_logp_pi = torch.stack(next_logp_pi_n, dim=0).mean(dim=0)
             # if np.random.random()<0.05:
-            #     self.logger.info(y)
-        for optimizer, critic in zip(self.optimizer_critics, self.critics):
-            loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y, f_hyst=self.par.f_hyst)*0.5 #0.5 is to correspond with code of Janner
-            # print(torch.mean(min_next_Q))
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+
+            for optimizer, critic in zip(self.agents[0].critics_optimizer, self.agents[0].critics):
+                if self.use_min:
+                    min_next_Q = torch.min(
+                        *[critic_target(b["o_next"], next_a).squeeze() for critic_target in self.agents[0].critics_target])
+                else:
+                    min_next_Q = self.agents[0].critics_target[0](b["o_next"], next_a).squeeze()
+                y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.agents[0].alpha * next_logp_pi)
+
+                loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y, f_hyst=self.par.f_hyst)*0.5 #0.5 is to correspond with code of Janner
+                # print(torch.mean(min_next_Q))
+                optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(critic.parameters(), 0.5)
+                optimizer.step()
+        else:
+            for agent in self.agents:
+                b = self.sample_batch()
+                with torch.no_grad():
+                    next_a_n = []
+                    next_logp_pi_n = []
+                    for i, agent2 in enumerate(self.agents):
+                        next_a, next_logp_pi = agent2.actor_target(
+                            b["o_next"][:, self.obs_i_per_agent[i]:self.obs_i_per_agent[i+1]], sample=False)
+                        next_a_n.append(next_a)
+                        if agent2 == agent:
+                            next_logp_pi_n.append(next_logp_pi)
+                        # if np.random.rand()<0.01:
+                        #     print("LOGPOL:" + str(torch.mean(next_logp_pi)))
+                    next_a = torch.cat(next_a_n, dim=-1)
+                    next_logp_pi = torch.stack(next_logp_pi_n, dim=0).sum(dim=0) # How to calculate this?
+                for optimizer, critic in zip(agent.critics_optimizer, agent.critics):
+                    if self.use_min:
+                        min_next_Q = torch.min(
+                            *[critic_target(b["o_next"], next_a).squeeze() for critic_target in
+                              agent.critics_target])
+                    else:
+                        min_next_Q = agent.critics_target[0](b["o_next"], next_a).squeeze()
+
+                    y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.agents[0].alpha * next_logp_pi)
+
+                    loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y,
+                                       f_hyst=self.par.f_hyst)#* 0.5  # 0.5 is to correspond with code of Janner
+                    # print(torch.mean(min_next_Q))
+                    # if np.random.rand() < 0.01:
+                    #     print("Mean target: ", torch.mean(y))
+                    #     print("LOSSQ:" + str(loss))
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+    def sample_batch(self):
+        n_real = int(self.par.batch_size * self.par.real_ratio)
+        b_fake = self.ac_buffer.sample_tensors(n=self.par.batch_size - n_real)
+        b_real = self.real_buffer.sample_tensors(n=n_real)
+        b = dict()
+        for key in b_fake.keys():
+            b[key] = torch.cat([b_fake[key], b_real[key]])
+        return b

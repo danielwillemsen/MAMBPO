@@ -17,6 +17,8 @@ from decentralizedlearning.algs.models import EnsembleModel
 from decentralizedlearning.algs.models import DegradedSim
 
 import logging
+
+
 class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
@@ -57,7 +59,8 @@ class SACHyperPar:
         self.use_multistep_reg = bool(kwargs.get("use_multistep_reg", False))
         self.use_degraded_sim = bool(kwargs.get("use_degraded_sim", False))
         self.name = str(kwargs.get("name", "cheetah"))
-        self.use_common_policy = bool(kwargs.get("use_common_policy", False))
+        self.use_common_actor = bool(kwargs.get("use_common_actor", False))
+        self.use_common_critic = bool(kwargs.get("use_common_critic", False))
 
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
@@ -83,7 +86,7 @@ class SAC:
         self.action_dim = action_dim
 
         # Initialize actor
-        self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim)
+        self.actor = StochActor(obs_dim, self.par.hidden_dims_actor,  action_dim, device=self.device)
         self.actor_target = copy.deepcopy(self.actor)
         self.actor.to(self.device)
         self.actor_target.to(self.device)
@@ -184,14 +187,14 @@ class SAC:
         if eval:
             # Select greedy action and return
             if greedy_eval:
-                action = self.select_action(o, "greedy")
+                action = self.actor.select_action(o, "greedy")
             else:
-                action = self.select_action(o, "noisy")
+                action = self.actor.select_action(o, "noisy")
             return action.detach().cpu().numpy()
 
         if generate_val_data:
             # Select greedy action and return
-            action = self.select_action(o, "noisy")
+            action = self.actor.select_action(o, "noisy")
             if self.o_old is not None:
                 self.val_buffer.add((self.o_old, self.a_old, r, o, done))
             self.o_old = o
@@ -208,45 +211,33 @@ class SAC:
 
         if self.o_old is not None:
             self.real_buffer.add((self.o_old, self.a_old, r, o, done))
+
         if self.par.use_degraded_sim and self.s_old is not None:
             self.model_sample_buffer.add((self.o_old, self.a_old, r, o, done), self.s_old)
 
         if self.par.use_multistep_reg:
             if len(self.traj_o)>self.multistep_buffer.length:
                 self.multistep_buffer.add_mini_traj(self.traj_o[-6:], self.traj_a[-5:], self.traj_r[-5:], self.traj_done[-5:])
+
         if self.step_i % self.par.update_model_every_n_steps == 0:
-            #Update model and generate new samples:
+            # Update model and generate new samples:
             if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
-                #for i in range(1*self.par.update_every_n_steps):
-                    #self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
                 self.model.train_models(self.optimizer_model, self.real_buffer, multistep_buffer=self.multistep_buffer)
-                #self.model.generate_batch(self.real_buffer.sample_tensors())
                 if self.par.monitor_losses and self.step_i % (250) == 0:
                     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
                     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
-                    print(len(self.fake_buffer))
-        if self.par.monitor_losses and self.step_i %(250) == 0:
-            self.logger.info("alpha:" + str(self.alpha))
+        #
+        # if self.par.monitor_losses and self.step_i %(250) == 0:
+        #     self.logger.info("alpha:" + str(self.alpha))
 
         if self.step_i % self.par.update_every_n_steps == 0:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    batch_this_epoch = 1000#self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
-                    fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch), self.actor,
-                                                                 diverse=self.par.diverse,
-                                                                 batch_size=batch_this_epoch)  # self.par.batch_size)
-                    self.fake_buffer.reallocate(size=batch_this_epoch*self.par.rollout_length)
-                    for item in fake_samples:
-                        self.fake_buffer.add_multiple(item)
+                    self.generate_fake_samples()
                 for step in range(self.par.n_steps):# * self.par.update_every_n_steps):
                     # Train actor and critic
-                    n_real = int(self.par.batch_size * self.par.real_ratio)
-                    b_fake = self.ac_buffer.sample_tensors(n=self.par.batch_size-n_real)
-                    b_real = self.real_buffer.sample_tensors(n=n_real)
-                    b = dict()
-                    for key in b_fake.keys():
-                        b[key] = torch.cat([b_fake[key], b_real[key]])
+                    b = self.sample_batch()
                     # Update Critic
                     self.update_critics(b)
 
@@ -261,9 +252,9 @@ class SAC:
 
         # Select Action
         if self.step_i > self.par.step_random:
-            action = self.select_action(o, "noisy")
+            action = self.actor.select_action(o, "noisy")
         else:
-            action = self.select_action(o, "random")
+            action = self.actor.select_action(o, "random")
 
         self.o_old = o
         self.s_old = s
@@ -276,17 +267,24 @@ class SAC:
         self.traj_a.append(action)
         return action.detach().cpu().numpy()
 
-    def select_action(self, o, method):
-        assert method in ["random", "noisy", "greedy"], "Invalid action selection method"
-        if method == "random":
-            return torch.rand(self.action_dim, dtype=torch.float, device=self.device)*2.-1.
+    def generate_fake_samples(self):
+        batch_this_epoch = 1000  # self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
+        fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch),
+                                                     self.actor,
+                                                     diverse=self.par.diverse,
+                                                     batch_size=batch_this_epoch)  # self.par.batch_size)
+        self.fake_buffer.reallocate(size=batch_this_epoch * self.par.rollout_length)
+        for item in fake_samples:
+            self.fake_buffer.add_multiple(item)
 
-        with torch.no_grad():
-            if method == "greedy":
-                action = self.actor(o.unsqueeze(0), greedy=True).squeeze()
-            else:
-                action = self.actor(o.unsqueeze(0), greedy=False).squeeze()
-            return action
+    def sample_batch(self):
+        n_real = int(self.par.batch_size * self.par.real_ratio)
+        b_fake = self.ac_buffer.sample_tensors(n=self.par.batch_size - n_real)
+        b_real = self.real_buffer.sample_tensors(n=n_real)
+        b = dict()
+        for key in b_fake.keys():
+            b[key] = torch.cat([b_fake[key], b_real[key]])
+        return b
 
     def update_rollout_length(self):
         if self.par.use_rollout_schedule:
@@ -330,8 +328,7 @@ class SAC:
             min_next_Q = torch.min(
                 *[critic_target(b["o_next"], next_a).squeeze() for critic_target in self.critics_target])
             y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.alpha * next_logp_pi)
-            # if np.random.random()<0.05:
-            #     self.logger.info(y)
+
         for optimizer, critic in zip(self.optimizer_critics, self.critics):
             loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y, f_hyst=self.par.f_hyst)*0.5 #0.5 is to correspond with code of Janner
             optimizer.zero_grad()

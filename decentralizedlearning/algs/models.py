@@ -149,7 +149,7 @@ class EnsembleModel(nn.Module):
     def update_step(self, optim, samples):
         o_next_pred, r_pred = self(samples["o"], samples["a"])
         target_o = samples["o_next"]
-        target_r = samples["r"].unsqueeze(-1)
+        target_r = samples["r"].unsqueeze(-1)#.unsqueeze(0).repeat(10,1,1)
 
         log_var_o = o_next_pred[1]
         log_var_r = r_pred[1]
@@ -165,8 +165,8 @@ class EnsembleModel(nn.Module):
             #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
             #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
         else:
-            loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
-            loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
+            l1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
+            l2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
             loss3 = 0.
         loss = l1+l2
 
@@ -187,7 +187,7 @@ class EnsembleModel(nn.Module):
             mu_o = o_next_pred[0]
             mu_r = r_pred[0]
 
-            if self.use_stochastic:
+            if self.use_stochastic or True:
                 l1 = torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),
                                                      ((mu_r - target_r) * (mu_r - target_r))), dim=-1),
                                           dim=(-1, -2))
@@ -221,7 +221,7 @@ class EnsembleModel(nn.Module):
 
 
     def train_models(self, optim, buffer, holdout=0.2, multistep_buffer=None):
-        batch_size = 256
+        batch_size = 1024
         buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
         epoch_iter = range(1000)#itertools.count()
         grad_steps = 0
@@ -311,7 +311,7 @@ class EnsembleModel(nn.Module):
 
         return ret_samples
 
-    def generate_efficient(self, samples, actor, diverse=True, batch_size=128, rollout_length=1):
+    def generate_efficient(self, samples, actor, diverse=True, batch_size=128, rollout_length=1, obs_i_per_agent=None, act_i_per_agent=None):
         ret_samples = []
         with torch.no_grad():
             for i in range(rollout_length):
@@ -322,7 +322,14 @@ class EnsembleModel(nn.Module):
                 if not diverse:
                     a = samples["a"] #actor(o, greedy=False)
                 else:
-                    a = actor(o, greedy=False)
+                    if type(actor) is not list:
+                        a = actor(o, greedy=False)
+                    else:
+                        a = samples["a"].clone()
+                        for i, actor_i in enumerate(actor):
+                            a_i = actor_i(o[:,obs_i_per_agent[i]:obs_i_per_agent[i+1]])
+                            a[:, act_i_per_agent[i]:act_i_per_agent[i + 1]] = a_i
+
                     #else:
                     #    o = new_o_ret
                     #    a = actor(o, greedy=False)
@@ -362,12 +369,12 @@ class Model(nn.Module):
         """
         super().__init__()
         self.use_stochastic = use_stochastic
-        self.MAX_LOG_VAR = torch.tensor(0.5, dtype=torch.float32)
+        self.MAX_LOG_VAR = torch.tensor(10., dtype=torch.float32)
         self.MIN_LOG_VAR = torch.tensor(-10., dtype=torch.float32)
         layers = []
-        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.ReLU()]
+        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.LeakyReLU()]
         for i in range(len(hidden_dims) - 1):
-            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.ReLU()]
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.LeakyReLU()]
         self.net = nn.Sequential(*layers)
         self.mu_output = nn.Linear(hidden_dims[-1], obs_dim)
         self.mu_reward = nn.Linear(hidden_dims[-1], 1)
