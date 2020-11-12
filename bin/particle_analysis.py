@@ -273,8 +273,8 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 3
     logdata = dict()
-    logpath = "../logs/"
-    logname = "test"
+    logpath = "./logs/"
+    logname = "navigation_5_step_no_model"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -300,7 +300,7 @@ if __name__ == '__main__':
                 par = get_hyperpar("MAMODEL", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
                 record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=50000*25,
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=20000*25,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)
 
             # for steps in [40]:

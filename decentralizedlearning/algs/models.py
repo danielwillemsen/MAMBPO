@@ -126,7 +126,7 @@ class EnsembleModel(nn.Module):
             mu_o = o_next_pred[0]
             mu_r = r_pred[0]
 
-            if self.use_stochastic:
+            if True:
                 l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
                 l2 = torch.sum(torch.mean(torch.cat((log_var_o, log_var_r), dim=-1),dim=(-1,-2)))
                 #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
@@ -158,9 +158,18 @@ class EnsembleModel(nn.Module):
         mu_o = o_next_pred[0]
         mu_r = r_pred[0]
 
-        if self.use_stochastic:
-            l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
-            l2 = torch.sum(torch.mean(torch.cat((log_var_o, log_var_r), dim=-1),dim=(-1,-2)))
+        if np.random.rand()<0.01:
+            vx = target_r - torch.mean(target_r)
+            vy = mu_r[0] - torch.mean(mu_r[0])
+            l1 = torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),
+                                       ((mu_r - target_r) * (mu_r - target_r))), dim=-1),
+                            dim=(-1, -2))
+            print("R corr_train", torch.sum(vx * vy) / (torch.sqrt(torch.sum(vx ** 2)) * torch.sqrt(torch.sum(vy ** 2))))
+            print("Loss train", l1)
+
+        if True:
+            l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),1*((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
+            l2 = torch.sum(torch.mean(torch.cat((log_var_o, 1*log_var_r), dim=-1),dim=(-1,-2)))
             #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
             #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
             #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
@@ -186,6 +195,9 @@ class EnsembleModel(nn.Module):
             inv_var_r = torch.exp(-log_var_r)
             mu_o = o_next_pred[0]
             mu_r = r_pred[0]
+            vx = target_r - torch.mean(target_r)
+            vy = mu_r[0] - torch.mean(mu_r[0])
+            print("R corr", torch.sum(vx * vy) / (torch.sqrt(torch.sum(vx ** 2)) * torch.sqrt(torch.sum(vy ** 2))))
 
             if self.use_stochastic or True:
                 l1 = torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),
@@ -221,9 +233,10 @@ class EnsembleModel(nn.Module):
 
 
     def train_models(self, optim, buffer, holdout=0.2, multistep_buffer=None):
-        batch_size = 1024
+        batch_size = 256
+        max_epochs = 15
         buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
-        epoch_iter = range(1000)#itertools.count()
+        epoch_iter = range(max_epochs)#itertools.count()
         grad_steps = 0
         stop_count = 0
         loss = self.get_mse_losses(buff_val.get_all())
@@ -231,6 +244,7 @@ class EnsembleModel(nn.Module):
         #best = self.state_dict()
         best = [model.state_dict() for model in self.models]
         for epoch in epoch_iter:
+            self.train()
             for batch_num in range(int(len(buff_train)/batch_size)):
                 self.update_step(optim, buff_train.sample_tensors(n=batch_size))
                 if multistep_buffer:
@@ -238,6 +252,7 @@ class EnsembleModel(nn.Module):
                                                multistep_buffer.sample_tensors(n=batch_size),
                                                multistep_buffer.length)
                 grad_steps += 1
+            self.eval()
             loss = self.get_mse_losses(buff_val.get_all())
             self.logger.info("Loss_mod:"+str((loss)))
             improved = False
@@ -345,6 +360,9 @@ class EnsembleModel(nn.Module):
                 if self.use_stochastic:
                     new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
                     r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
+                else:
+                    new_o = torch.normal(mu_o, 0.00001)
+                    r = torch.normal(mu_r, 0.00001)
                 new_o_ret = new_o[randomlist, idx, :]
                 done = samples["done"]
                 #done = self.termination_fn(new_o_ret, a)
@@ -372,21 +390,20 @@ class Model(nn.Module):
         self.MAX_LOG_VAR = torch.tensor(10., dtype=torch.float32)
         self.MIN_LOG_VAR = torch.tensor(-10., dtype=torch.float32)
         layers = []
-        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.LeakyReLU()]
+        layers += [nn.Linear(input_dim, hidden_dims[0]), nn.BatchNorm1d(hidden_dims[0]), nn.LeakyReLU(), ]
         for i in range(len(hidden_dims) - 1):
-            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.LeakyReLU()]
+            layers += [nn.Linear(hidden_dims[i], hidden_dims[i+1]), nn.BatchNorm1d(hidden_dims[i+1]) , nn.LeakyReLU()]
         self.net = nn.Sequential(*layers)
         self.mu_output = nn.Linear(hidden_dims[-1], obs_dim)
         self.mu_reward = nn.Linear(hidden_dims[-1], 1)
 
-        if self.use_stochastic:
-            self.var_output = nn.Linear(hidden_dims[-1], obs_dim)
-            self.var_reward = nn.Linear(hidden_dims[-1], 1)
+        self.var_output = nn.Linear(hidden_dims[-1], obs_dim)
+        self.var_reward = nn.Linear(hidden_dims[-1], 1)
 
     def forward(self, input):
         # x = torch.cat([observation, action], dim=-1)
         x = self.net(input)
-        if self.use_stochastic:
+        if True:
             log_var_output = self.var_output(x)
             log_var_reward = self.var_reward(x)
 
@@ -395,15 +412,18 @@ class Model(nn.Module):
 
             log_var_output = self.MIN_LOG_VAR + F.softplus(log_var_output - self.MIN_LOG_VAR)
             log_var_reward = self.MIN_LOG_VAR + F.softplus(log_var_reward - self.MIN_LOG_VAR)
+            if not self.use_stochastic:
+                log_var_reward *= 0.
+                log_var_output *= 0.
 
             return [self.mu_output(x), log_var_output], [self.mu_reward(x), log_var_reward]
-        else:
-            mu_out = self.mu_output(x)
-            mu_rew = self.mu_reward(x)
-
-            var_output = mu_out*0.
-            var_reward = mu_out*0.
-            return [mu_out, var_output], [mu_rew, var_reward]
+        # else:
+        #     mu_out = self.mu_output(x)
+        #     mu_rew = self.mu_reward(x)
+        #
+        #     var_output = mu_out*0.
+        #     var_reward = mu_out*0.
+        #     return [mu_out, var_output], [mu_rew, var_reward]
 
     #
     # def sample(self, observation, action):
