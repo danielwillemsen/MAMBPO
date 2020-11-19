@@ -143,7 +143,7 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
         # scores_eval.append(score_eval)
         t = time.time() - time_start
         times.append(t)
-        if i%250 == 249:
+        if i%50 == 49:
             logger.info("episode:" + str(i))
             for i_23 in range(10):
                 score, step, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
@@ -245,6 +245,9 @@ def single_run(env, agent_fn, logdata, data_log, seed, agent_kwargs=dict(), n_ep
         agents = []
         for i in range(env.n_agents):
             agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+    if agents[0].par.use_shared_replay_buffer:
+        for agent in agents:
+            agent.set_replay_buffer(agents[0].real_buffer)
 
     data_log.init_run(name)
 
@@ -273,8 +276,8 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 3
     logdata = dict()
-    logpath = "./logs/"
-    logname = "navigation_5_step_no_model"
+    logpath = "../logs/"
+    logname = "test"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -300,7 +303,7 @@ if __name__ == '__main__':
                 par = get_hyperpar("MAMODEL", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
                 record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=20000*25,
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=5001*25,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)
 
             # for steps in [40]:

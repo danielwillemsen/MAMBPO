@@ -61,6 +61,7 @@ class SACHyperPar:
         self.use_common_actor = bool(kwargs.get("use_common_actor", False))
         self.use_common_critic = bool(kwargs.get("use_common_critic", False))
         self.use_stochastic_actor = bool(kwargs.get("use_stochastic_actor", True))
+        self.use_centralized_critic = bool(kwargs.get("use_centralized_critic", True))
 
 class MASACAgent:
     def __init__(self, action_dim, device, par,
@@ -133,7 +134,7 @@ class MASAC:
         self.action_dim = self.action_dims[0]
         self.obs_dim = self.obs_dims[0]
 
-        self.agents = self.initialize_agents(self.action_dim, n_agents, self.obs_dim)
+        self.agents = self.initialize_agents(n_agents)
 
         if self.par.use_model:
             self.model = EnsembleModel(np.sum(self.obs_dims) + np.sum(self.action_dims),
@@ -151,7 +152,7 @@ class MASAC:
         else:
             self.model = None
 
-        self.real_buffer = ReplayBuffer(size=1000000, batch_size=self.par.batch_size, device=self.device)
+        self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
         if not self.par.use_degraded_sim:
             self.model_sample_buffer = self.real_buffer
         else:
@@ -185,8 +186,11 @@ class MASAC:
 
         self.step_i = 0
 
-    def initialize_agents(self, action_dim, n_agents, obs_dim):
+    def initialize_agents(self, n_agents):
         agents = []
+        critic_input_size = np.sum(self.obs_dims)+np.sum(self.action_dims) if self.par.use_centralized_critic \
+            else self.obs_dims[0] + self.action_dims[0]
+
         if self.par.use_common_actor:
             actor = StochActor(self.obs_dims[0], self.par.hidden_dims_actor, self.action_dims[0], discrete=self.discrete, device=self.device)
             actor_target = copy.deepcopy(actor)
@@ -196,7 +200,7 @@ class MASAC:
                                                lr=self.par.lr_actor,
                                                weight_decay=self.par.weight_decay)
         if self.par.use_common_critic:
-            critics = [Critic(np.sum(self.obs_dims)+np.sum(self.action_dims), self.par.hidden_dims_critic) for i in range(2)]
+            critics = [Critic(critic_input_size, self.par.hidden_dims_critic) for i in range(2)]
             critics_target = copy.deepcopy(critics)
             critics_optimizers = []
             for critic, critic_target in zip(critics, critics_target):
@@ -215,7 +219,7 @@ class MASAC:
                                                    lr=self.par.lr_actor,
                                                    weight_decay=0.001)
             if not self.par.use_common_critic:
-                critics = [Critic(np.sum(self.obs_dims)+np.sum(self.action_dims), self.par.hidden_dims_critic) for i in range(2)]
+                critics = [Critic(critic_input_size, self.par.hidden_dims_critic) for i in range(2)]
                 critics_target = copy.deepcopy(critics)
                 critics_optimizers = []
                 for critic, critic_target in zip(critics, critics_target):
@@ -270,7 +274,7 @@ class MASAC:
                 #     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
                 #     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
 
-        if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*1000:
+        if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*500:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()

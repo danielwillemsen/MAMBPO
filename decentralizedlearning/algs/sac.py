@@ -61,7 +61,8 @@ class SACHyperPar:
         self.name = str(kwargs.get("name", "cheetah"))
         self.use_common_actor = bool(kwargs.get("use_common_actor", False))
         self.use_common_critic = bool(kwargs.get("use_common_critic", False))
-
+        self.use_centralized_critic = bool(kwargs.get("use_centralized_critic", True))
+        self.use_shared_replay_buffer = bool(kwargs.get("use_shared_replay_buffer", False))
 class SAC:
     def __init__(self, obs_dim, action_dim, hyperpar=None, **kwargs):
         # Initialize arguments
@@ -169,6 +170,11 @@ class SAC:
 
 
         self.step_i = 0
+
+    def set_replay_buffer(self, replay_buffer):
+        self.real_buffer = replay_buffer
+        if not self.par.use_model:
+            self.ac_buffer = self.real_buffer
 
     def reset(self):
         self.o_old = None
