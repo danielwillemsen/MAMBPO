@@ -360,11 +360,11 @@ class MASAC:
             # print(str(loss_actor) + "---" + str(torch.mean(q_min)))
             agent.actor_optimizer.step()
 
-        for agent in self.agents:
+        for i, agent in enumerate(self.agents):
 
             if self.par.autotune:
                 with torch.no_grad():
-                    _, logp_pi = agent.actor(b["o"], sample=False)
+                    _, logp_pi = agent.actor(b["o"][:, self.obs_i_per_agent[i]:self.obs_i_per_agent[i+1]], sample=False)
                 alpha_loss = (-agent.log_alpha * (logp_pi + self.par.target_entropy)).mean()
                 agent.optimizer_alpha.zero_grad()
                 alpha_loss.backward()

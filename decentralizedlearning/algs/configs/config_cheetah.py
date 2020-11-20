@@ -1,5 +1,4 @@
 from decentralizedlearning.algs.sac import SACHyperPar
-
 def get_hyperpar(env, alg):
     if env=="HalfCheetah-v2" and alg=="model":
         return SACHyperPar(hidden_dims_actor=(256, 256),
@@ -238,6 +237,35 @@ def get_hyperpar(env, alg):
                            use_common_actor=False,
                            use_common_critic=False,
                            real_ratio=0.1)
+    if env=="MAMODEL_cheetah" and alg=="SAC":
+        return SACHyperPar(hidden_dims_actor=(128, 128),
+                           hidden_dims_critic=(256, 256),
+                           hidden_dims_model=(200, 200, 200, 200),
+                           gamma=0.95,
+                           tau=0.01,
+                           lr_actor=0.003,
+                           lr_critic=0.003,
+                           lr_model=0.001,
+                           l2_norm=0.0,
+                           step_random=00,
+                           update_every_n_steps=1,
+                           update_model_every_n_steps=1000,
+                           n_steps=1,
+                           delay=1,
+                           n_models=10,
+                           batch_size=256,
+                           weight_decay=0.0,
+                           alpha=0.02,
+                           use_model=True,
+                           use_model_stochastic=True,
+                           diverse=True,
+                           autotune=True,
+                           target_entropy=-3.0,
+                           name=env,
+                           use_common_actor=False,
+                           use_common_critic=False,
+                           real_ratio=0.1)
+
     if env=="MAMODEL2" and alg=="SAC":
         return SACHyperPar(hidden_dims_actor=(128, 128),
                            hidden_dims_critic=(128, 128),

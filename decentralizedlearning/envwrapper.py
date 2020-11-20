@@ -5,11 +5,13 @@ sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodule
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/environments'))
 
 import gym
+from decentralizedlearning.submodules.multiagent_mujoco.src.multiagent_mujoco.mujoco_multi import MujocoMulti
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from waypoints import WaypointsEnv
 from circle import CircleEnv
 from make_env import make_env
+from gym.spaces import Box
 try:
     from crossing import CrossingEnv
     from continuouscrossing import ContinuousCrossingEnv
@@ -36,7 +38,7 @@ class EnvWrapper:
         :param kwargs:
         """
         # Check if suite name is correct and can be handled
-        supported_suites = ["gym", "particle", "custom", "gym-record"]
+        supported_suites = ["gym", "particle", "custom", "gym-record", "multiagent_mujoco"]
         assert suite in supported_suites, "Suite should be in {} but was {}".format(str(supported_suites), suite)
         self.suite = suite
         self.wrapped_env = None
@@ -81,7 +83,18 @@ class EnvWrapper:
                 # act_space.low = np.zeros(8) - 1.0
                 # act_space.high = np.zeros(8) + 1.0
                 act_space.shape = (act_space.n,)
-                
+        # Setup multiagent_mujoco
+        if suite== "multiagent_mujoco":
+            env_args = {"scenario": "HalfCheetah-v2",
+                  "agent_conf": "2x3",
+                  "agent_obsk": 0,
+                  "episode_limit": 1000}
+            self.env = MujocoMulti(env_args=env_args)
+            env_info = self.env.get_env_info()
+            self.n_agents = env_info["n_agents"]
+            self.action_space = env_info["action_spaces"]
+            self.observation_space = [Box(shape=(env_info["obs_shape"],), low=float("-inf"), high=float("inf"), dtype=np.float32) for i in range(self.n_agents)]
+
     def step(self, actions: list):
         """step. Takes a step in the environment given a list of actions, one for
         every agent. Individual actions should be np arrays containing all
@@ -92,6 +105,11 @@ class EnvWrapper:
         """
         if self.suite == "gym" or self.suite == "gym-record":
             return tuple([obj] for obj in self.env.step(actions[0]))
+        if self.suite == "multiagent_mujoco":
+            reward, terminated, info = self.env.step(actions)
+            rewards = [reward for i in range(self.n_agents)]
+            observations = self.env.get_obs()
+            return observations, rewards, [terminated], info
         return self.env.step(actions)
     
     def reset(self):

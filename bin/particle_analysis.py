@@ -30,7 +30,7 @@ def scale_action(env, agent_id, action):
         return action
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False, trainer=None):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -125,6 +125,7 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
         # if i % 2 == 0:
         #     run_episode(env, agents, eval=False, generate_val_data=True)
         score, step, extra_data = run_episode(env, agents, render=False, store_data=True, trainer=trainer)
+        print("Score", score)
         step_tot += step
         data_log.set_step(step_tot)
         data_log.log_var("score", score)
@@ -231,7 +232,7 @@ def single_run(env, agent_fn, logdata, data_log, seed, agent_kwargs=dict(), n_ep
     logger.info("agent:" + name)
 
 
-    env.env.seed(seed=seed)
+    # env.env.seed(seed=seed)
     if name not in logdata:
         logdata[name] = []
 
@@ -296,12 +297,12 @@ if __name__ == '__main__':
             agent_fn = SAC
             for n_agent in [4]:
 
-                env = EnvWrapper("particle", name, n_agents=n_agent, randomized=False)
+                env = EnvWrapper("multiagent_mujoco", name, n_agents=n_agent, randomized=False)
                 agent_fn = SAC
                 algname = "SAC"
 
-                par = get_hyperpar("MAMODELnew", alg=algname)
+                par = get_hyperpar("MAMODEL_cheetah", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
-                record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
+                record_env = EnvWrapper("multiagent_mujoco", name, n_agents=n_agent, randomized=True)
                 single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=5001*25,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)
