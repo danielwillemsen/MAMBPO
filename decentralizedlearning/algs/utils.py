@@ -600,8 +600,12 @@ class StochActor(nn.Module):
         # If discrete, use Gumbel-Softmax
         noise = torch.distributions.uniform.Uniform(torch.zeros(mu.shape),torch.zeros(mu.shape)+1.0)
         noise_sample = noise.rsample().to(self.device)
+        if greedy:
+            factor = 0.
+        else:
+            factor = 1.
         eps = 1e-10
-        act = torch.nn.functional.softmax(mu - torch.log(-torch.log(noise_sample + eps)+eps), -1)
+        act = torch.nn.functional.softmax(mu - factor*torch.log(-torch.log(noise_sample + eps)+eps), -1)
         if not act.max() < 1.01:
             print("nan")
         # pi_dist = torch.distributions.relaxed_bernoulli.LogitRelaxedBernoulli(torch.tensor(1.0), logits=mu)

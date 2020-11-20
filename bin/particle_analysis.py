@@ -300,54 +300,8 @@ if __name__ == '__main__':
                 agent_fn = SAC
                 algname = "SAC"
 
-                par = get_hyperpar("MAMODEL", alg=algname)
+                par = get_hyperpar("MAMODELnew", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
                 record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
                 single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=5001*25,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)
-
-            # for steps in [40]:
-            #     #
-            #     algname = "model_regulated"
-            #     par = get_hyperpar(naspreadme2, alg=algname)
-            #     agent_kwargs = {"hyperpar": par}
-            #     record_env = EnvWrapper("gym-record", name,
-            #                             video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-            #     single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
-            #                record_env=record_env, name=algname)
-            #     record_env.close()
-            #
-            #     p.dump(logdata, open(logfile, "wb"))
-            #
-            #
-            # algname = "SAC"
-            # par = get_hyperpar(name2, alg=algname)
-            # agent_kwargs = {"hyperpar": par}
-            # record_env = EnvWrapper("gym-record", name,
-            #                         video_dir_name=logpath + "videos/" + logname + "/" + str(run) + algname)
-            # single_run(env, agent_fn, logdata,data_log, run, agent_kwargs=agent_kwargs, n_steps=50000,
-            #            record_env=record_env, name=algname)
-            # record_env.close()
-            # p.dump(logdata, open(logfile, "wb"))
-
-            # par = get_hyperpar(name, alg="model")
-            # agent_kwargs = {"hyperpar": par}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=100000)
-            # p.dump(logdata, open(logfile, "wb"))
-            #
-
-            #
-            # agent_kwargs = {"n_steps": steps, "use_model": False}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_steps=15000)
-            # p.dump(logdata, open(logfile, "wb"))
-
-            # agent_kwargs = {"n_steps": steps, "use_model": True, "diverse": False}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=250)
-            # p.dump(logdata, open(logfile, "wb"))
-            #
-            # agent_kwargs = {"n_steps": steps, "use_model": True}
-            # single_run(env, agent_fn, logdata, run, agent_kwargs=agent_kwargs, n_episodes=50)
-            # p.dump(logdata, open(logfile, "wb"))
-
-    # except Exception:
-    #     logger.exception("Fatal error.")

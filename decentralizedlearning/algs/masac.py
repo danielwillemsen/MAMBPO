@@ -352,7 +352,7 @@ class MASAC:
                 q_min = torch.min(q1, q2)
             else:
                 q_min = q1
-            loss_actor = - torch.mean(q_min - logp_pi * self.agents[0].alpha)
+            loss_actor = - torch.mean(q_min - logp_pi * agent.alpha)
             agent.actor_optimizer.zero_grad()
             loss_actor.backward()
             torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), 0.5)
@@ -360,16 +360,16 @@ class MASAC:
             # print(str(loss_actor) + "---" + str(torch.mean(q_min)))
             agent.actor_optimizer.step()
 
-        # for agent in self.agents:
-            #
-            # if self.par.autotune:
-            #     with torch.no_grad():
-            #         _, logp_pi = agent.actor(b["o"], sample=False)
-            #     alpha_loss = (-agent.log_alpha * (logp_pi + self.par.target_entropy)).mean()
-            #     agent.optimizer_alpha.zero_grad()
-            #     alpha_loss.backward()
-            #     agent.optimizer_alpha.step()
-            #     agent.alpha = agent.log_alpha.exp().item()
+        for agent in self.agents:
+
+            if self.par.autotune:
+                with torch.no_grad():
+                    _, logp_pi = agent.actor(b["o"], sample=False)
+                alpha_loss = (-agent.log_alpha * (logp_pi + self.par.target_entropy)).mean()
+                agent.optimizer_alpha.zero_grad()
+                alpha_loss.backward()
+                agent.optimizer_alpha.step()
+                agent.alpha = agent.log_alpha.exp().item()
         if self.par.use_common_critic:
             for critic in self.agents[0].critics:
                 for par in critic.parameters():
@@ -435,7 +435,7 @@ class MASAC:
                     else:
                         min_next_Q = agent.critics_target[0](b["o_next"], next_a).squeeze()
 
-                    y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - self.agents[0].alpha * next_logp_pi)
+                    y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - agent.alpha * next_logp_pi)
 
                     loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y,
                                        f_hyst=self.par.f_hyst)#* 0.5  # 0.5 is to correspond with code of Janner
