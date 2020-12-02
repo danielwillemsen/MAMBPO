@@ -44,6 +44,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
         actions = []
     # Start env
     for i in range(steps):
+
         # query for action from each agent's policy
         act_n = []
         if store_data or True:
@@ -117,6 +118,8 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
     scores_list = []
 
     for i in ep_generator:
+        logger.info("episode:" + str(i))
+
         data_log.set_episode(i)
         # logger.info("episode:" + str(i))
         # if i % 20 == 0:
@@ -125,7 +128,7 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
         # if i % 2 == 0:
         #     run_episode(env, agents, eval=False, generate_val_data=True)
         score, step, extra_data = run_episode(env, agents, render=False, store_data=True, trainer=trainer)
-        print("Score", score)
+        logger.info("Score: " + str(score))
         step_tot += step
         data_log.set_step(step_tot)
         data_log.log_var("score", score)
@@ -144,42 +147,42 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
         # scores_eval.append(score_eval)
         t = time.time() - time_start
         times.append(t)
-        if i%50 == 49:
-            logger.info("episode:" + str(i))
-            for i_23 in range(10):
-                score, step, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
-            scores_greedy = []
-            cols = []
-            dists = []
-            for e in range(50):
-                score_greedy, _, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
-                scores_greedy.append(np.mean(score_greedy))
-                cols.append(np.sum([sum(dat) - 25 for dat in zip(
-                    *extra_data["rewards_details"]["rewards_collision"])]) / 2 ) # -25 is excluding self collisions.
-                dists.append(np.mean([np.mean(dat) for dat in zip(
-                    *extra_data["rewards_details"]["rewards_target"])]))  # /sum of distances over all 3 targets.
+        # if i%50 == 49:
+        #     logger.info("episode:" + str(i))
+        #     for i_23 in range(10):
+        #         score, step, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
+        #     scores_greedy = []
+        #     cols = []
+        #     dists = []
+        #     for e in range(50):
+        #         score_greedy, _, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
+        #         scores_greedy.append(np.mean(score_greedy))
+        #         cols.append(np.sum([sum(dat) - 25 for dat in zip(
+        #             *extra_data["rewards_details"]["rewards_collision"])]) / 2 ) # -25 is excluding self collisions.
+        #         dists.append(np.mean([np.mean(dat) for dat in zip(
+        #             *extra_data["rewards_details"]["rewards_target"])]))  # /sum of distances over all 3 targets.
+        #
+        #     print("Mean score: " + str(np.mean(scores_list)))
+        #     logger.info("Mean score (greedy): " + str(np.mean(scores_greedy)))
+        #     data_log.log_var("mean_score_greedy", np.mean(scores_greedy))
+        #     print("Mean collisions (greedy): " + str(np.mean(cols)))
+        #     print("Mean dist (greedy): " + str(np.mean(dists)))
 
-            print("Mean score: " + str(np.mean(scores_list)))
-            logger.info("Mean score (greedy): " + str(np.mean(scores_greedy)))
-            data_log.log_var("mean_score_greedy", np.mean(scores_greedy))
-            print("Mean collisions (greedy): " + str(np.mean(cols)))
-            print("Mean dist (greedy): " + str(np.mean(dists)))
 
-
-            scores_list = []
-            logger.info("time_elapsed:" + str(t))
-            logger.info("score:" + str(score))
-            # logger.info("score_collision: " + str(rewards_collision))
+            # scores_list = []
+            # logger.info("time_elapsed:" + str(t))
+            # logger.info("score:" + str(score))
+            # # logger.info("score_collision: " + str(rewards_collision))
             # logger.info("score_target: " + str(rewards_target))
 
             # logger.info("score_greedy:" + str(score2))
-            logger.info("step_tot:" + str(step_tot))
+        logger.info("step_tot:" + str(step_tot))
 
         steps.append(step_tot)
         if n_steps and step_tot > n_steps:
             break
         # logger.info("score_eval:"+str(score_eval))
-        if i % 1000 == 0:
+        if i % 50 == 0:
             logger.info("Saving log...")
             data_log.save()
             logger.info("Saved log")
@@ -270,15 +273,15 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "simple_spread"
+    name = "HalfCheetah-v2"
 
     # env = EnvWrapper("custom", name)
     # env.env.render()
     # execution loop
     n_runs = 3
     logdata = dict()
-    logpath = "../logs/"
-    logname = "test"
+    logpath = "./logs/"
+    logname = "cheetah_no_model"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -304,5 +307,5 @@ if __name__ == '__main__':
                 par = get_hyperpar("MAMODEL_cheetah", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
                 record_env = EnvWrapper("multiagent_mujoco", name, n_agents=n_agent, randomized=True)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=5001*25,
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=501*1000,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)

@@ -77,7 +77,7 @@ class EnsembleModel(nn.Module):
         self.use_stochastic = use_stochastic
         self.name = name
         self.n_models = n_models
-        self.n_elites = 5
+        self.n_elites = 10
         if monitor_losses:
             self.logger = logging.getLogger('root')
         self.models = nn.ModuleList([Model(input_dim, hidden_dims, obs_dim, use_stochastic=use_stochastic) for i in range(n_models)])
@@ -145,7 +145,7 @@ class EnsembleModel(nn.Module):
         optim.zero_grad()
         loss.backward()
         optim.step()
-        
+
     def update_step(self, optim, samples):
         o_next_pred, r_pred = self(samples["o"], samples["a"])
         target_o = samples["o_next"]
@@ -232,51 +232,59 @@ class EnsembleModel(nn.Module):
 
 
 
-    def train_models(self, optim, buffer, holdout=0.2, multistep_buffer=None):
-        batch_size = 256
-        max_epochs = 15
-        buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
-        epoch_iter = range(max_epochs)#itertools.count()
-        grad_steps = 0
-        stop_count = 0
-        loss = self.get_mse_losses(buff_val.get_all())
-        sum_loss = loss
-        #best = self.state_dict()
-        best = [model.state_dict() for model in self.models]
-        for epoch in epoch_iter:
-            self.train()
-            for batch_num in range(int(len(buff_train)/batch_size)):
-                self.update_step(optim, buff_train.sample_tensors(n=batch_size))
-                if multistep_buffer:
-                    self.multistep_update_step(optim,
-                                               multistep_buffer.sample_tensors(n=batch_size),
-                                               multistep_buffer.length)
-                grad_steps += 1
-            self.eval()
-            loss = self.get_mse_losses(buff_val.get_all())
-            self.logger.info("Loss_mod:"+str((loss)))
-            improved = False
-            for i_model in range(self.n_models):
-                if (sum_loss[i_model] - loss[i_model])/sum_loss[i_model] > 0.01:
-                    sum_loss[i_model] = loss[i_model]
-                    best[i_model] = self.models[i_model].state_dict()
-                    improved = True
-            if improved:
-                stop_count = 0
-            else:
-                stop_count += 1
-            if stop_count >= 5:
-                break
-        for model, best_model in zip(self.models, best):
-            model.load_state_dict(best_model)
-        self.elites = []
-        for i in range(self.n_elites):
-            idx = torch.argmin(sum_loss)
-            self.elites.append(self.models[idx])
-            sum_loss[idx] = 9999.
-        # self.load_state_dict(best)
-        self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))
-        return
+    # def train_models(self, optim, buffer, holdout=0.2, multistep_buffer=None):
+    #     batch_size = 256
+    #     max_epochs = 15
+    #     buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
+    #     epoch_iter = range(max_epochs)#itertools.count()
+    #     grad_steps = 0
+    #     stop_count = 0
+    #     loss = self.get_mse_losses(buff_val.get_all())
+    #     sum_loss = loss
+    #     #best = self.state_dict()
+    #     best = [model.state_dict() for model in self.models]
+    #     for epoch in epoch_iter:
+    #         loss = self.get_mse_losses(buff_train.get_all())
+    #         self.logger.info("Loss_mod_train:"+str((loss)))
+    #         self.train()
+    #         for batch_num in range(int(len(buff_train)/batch_size)):
+    #             self.update_step(optim, buff_train.sample_tensors(n=batch_size))
+    #             if multistep_buffer:
+    #                 self.multistep_update_step(optim,
+    #                                            multistep_buffer.sample_tensors(n=batch_size),
+    #                                            multistep_buffer.length)
+    #             grad_steps += 1
+    #         self.eval()
+    #         loss = self.get_mse_losses(buff_val.get_all())
+    #         self.logger.info("Loss_mod:"+str((loss)))
+    #         improved = False
+    #         for i_model in range(self.n_models):
+    #             if (sum_loss[i_model] - loss[i_model])/sum_loss[i_model] > 0.01:
+    #                 sum_loss[i_model] = loss[i_model]
+    #                 best[i_model] = self.models[i_model].state_dict()
+    #                 improved = True
+    #         if improved:
+    #             stop_count = 0
+    #         else:
+    #             stop_count += 1
+    #         if stop_count >= 5:
+    #             break
+    #     for model, best_model in zip(self.models, best):
+    #         model.load_state_dict(best_model)
+    #     self.elites = []
+    #     for i in range(self.n_elites):
+    #         idx = torch.argmin(sum_loss)
+    #         self.elites.append(self.models[idx])
+    #         sum_loss[idx] = 9999.
+    #     # self.load_state_dict(best)
+    #     self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))
+    #     return
+    def train_models(self, optim, buffer, **kwargs):
+        batch_size = 512
+        n_steps_model = 200
+        for step in range(n_steps_model):
+            self.update_step(optim, buffer.sample_tensors(n=batch_size))
+        self.logger.info("Stopped.")
 
     def log_loss(self, samples, name):
         o_next_pred, r_pred = self(samples["o"], samples["a"])
@@ -387,8 +395,8 @@ class Model(nn.Module):
         """
         super().__init__()
         self.use_stochastic = use_stochastic
-        self.MAX_LOG_VAR = torch.tensor(10., dtype=torch.float32)
-        self.MIN_LOG_VAR = torch.tensor(-10., dtype=torch.float32)
+        self.MAX_LOG_VAR = torch.tensor(-2., dtype=torch.float32)
+        self.MIN_LOG_VAR = torch.tensor(-5., dtype=torch.float32)
         layers = []
         #layers += [nn.Linear(input_dim, hidden_dims[0]), nn.BatchNorm1d(hidden_dims[0]), nn.LeakyReLU(), ]
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.LeakyReLU(), ]

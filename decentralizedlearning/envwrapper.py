@@ -87,7 +87,7 @@ class EnvWrapper:
         if suite== "multiagent_mujoco":
             env_args = {"scenario": "HalfCheetah-v2",
                   "agent_conf": "2x3",
-                  "agent_obsk": 0,
+                  "agent_obsk": 1,
                   "episode_limit": 1000}
             self.env = MujocoMulti(env_args=env_args)
             env_info = self.env.get_env_info()

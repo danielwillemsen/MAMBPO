@@ -18,7 +18,7 @@ name_run = "model_degraded"
 data = torch.load("../logs/" + name + ".p", map_location="cpu")
 a =2
 
-def moving_average(a, n=10) :
+def moving_average(a, n=50) :
     b = np.zeros(a.size)
     for i in range(len(a)):
         if i>=n:
@@ -27,9 +27,23 @@ def moving_average(a, n=10) :
             b[i] = np.mean(a[0:i+1])
     return b
 
+def moving_average_2d(a, n=200) :
+    b = np.zeros(a.shape)
+    for i in range(a.shape[1]):
+        if i>=n:
+            b[:,i] = np.mean(a[:,i-n:i+1], axis=1)
+        else:
+            b[:,i] = np.mean(a[:,0:i+1], axis=1)
+    return b
+
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
+    return idx
+
+def find_nearest_mult(array, values):
+    array = np.asarray(array)
+    idx = (np.abs(np.expand_dims(array, 1) - np.expand_dims(values, 0))).argmin(axis=0)
     return idx
 
 def analyze_model(data, it, run=0):
@@ -461,20 +475,27 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
                 plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
                                  data_temp['y'] + data_temp['std'], color=colors[alg],
                                  alpha=0.25)
-    steps = np.arange(0,5000,50)
+    steps_max = 15000
     for log in logs:
         data = torch.load("../logs/" + log + ".p", map_location="cpu")
         for key in data.keys():
-                plot_name_ep(data, key, steps, var, name=log, use_moving_average=use_moving_average)
-    plt.xlim(0, steps[-1])
+                plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
+    plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
+    plt.xlim(1., steps_max)
     plt.xlabel("Episode")
-    plt.ylim(-250,-130)
+    plt.ylim(-200,-120)
     plt.ylabel(var_name)
     plt.legend()
     plt.grid()
     plt.show()
 
-def plot_name_ep(data, key, steps, var, name=None, use_moving_average=False):
+def plot_data_csv(file, steps_max, name):
+    data = np.genfromtxt(file, delimiter=",", names=["x", "y"])
+    plt.plot(data["x"], data["y"], label=name)
+
+def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False):
+    steps_max = min(steps_max, data[key]["runs"][0][var][-1][0])
+    steps = np.arange(0,steps_max,1)
     if not name:
         name=key + "(ours)"
     values = []
@@ -482,27 +503,30 @@ def plot_name_ep(data, key, steps, var, name=None, use_moving_average=False):
         # run = data[key]["runs"][0] #Only take first run
         values.append([])
         steps_var = [val[0] for val in run[var]]
-        for step in steps:
-            idx = find_nearest(steps_var, step)
-            values[-1].append(np.mean(run[var][idx][3]))
+        idxs = find_nearest_mult(steps_var, steps)
+        for idx, step in enumerate(steps):
+            # idx = find_nearest(steps_var, step)
+            values[-1].append(np.mean(run[var][idxs[idx]][3]))
         values[-1] = np.array(values[-1])
-    mean_scores = np.mean(values, axis=0)
-    std_scores = np.std(values, axis=0)
     if use_moving_average:
-        mean_scores = moving_average(mean_scores)
-        std_scores = moving_average(std_scores)
-    # if "actor" in name:
-    #     name = "MASAC (Shared Critic and Actor)"
+        values = moving_average_2d(np.array(values))
+    mean_scores = np.mean(values, axis=0)
+    std_scores = np.std(values, axis=0)/np.sqrt(values.shape[0])
+    # if use_moving_average:
+    #     mean_scores = moving_average(mean_scores)
+    #     std_scores = moving_average(std_scores)
+    if "actor" in name:
+        name = "MASAC (Shared Critic and Actor)"
     # elif "critic" in name:
     #     name = "MASAC (Shared Critic)"
     # elif "sac" in name:
     #     name = "SAC"
     # elif "navigation_sharebuffer" in name:
     #     name = "SAC (Shared Buffer)"
-    # elif "no_model" in name:
-    #     name = "MASAC"
-    # elif "model" in name:
-    #     name = "MASAC (Model-Based)"
+    elif "no_model" in name:
+        name = "Tuned MASAC"
+    elif "model" in name:
+        name = "Tuned Model-Based MASAC"
     # else:
     #     name = "MASAC"# (Model-Based)"
     plt.plot(steps, mean_scores, label=name)
@@ -759,22 +783,33 @@ def plot_mse_noise(logs, data, its):
 
     plt.show()
 
-logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
-logs = [ "4_agent", "4_agent_lowlr"]
-logs = [ "4_agent_new", "4_agent_lowlr"]
-
-logs = ["particle_long", "particle_long_common_critic", "particle_long_common_critic_common_actor", "particle_long_sac", "navigation_sharebuffer", "navigation_5_step_no_model", "navigation_5_step_model","navigation_20_step_no_model"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
-# logs = ["particle_comm", "particle_comm_sac"]#, "particle_long_common_critic_common_actor", "particle_long_sac"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
+# logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
+# logs = [ "4_agent", "4_agent_lowlr"]
+# logs = [ "4_agent_new", "4_agent_lowlr"]
+#
 # logs = ["particle_long", "particle_long_common_critic", "particle_long_common_critic_common_actor", "particle_long_sac", "navigation_sharebuffer", "navigation_5_step_no_model", "navigation_5_step_model","navigation_20_step_no_model"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
-logs = ["particle_long", "particle_long_sac", "navigation_sharebuffer"]
-plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+# # logs = ["particle_comm", "particle_comm_sac"]#, "particle_long_common_critic_common_actor", "particle_long_sac"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
+# # logs = ["particle_long", "particle_long_common_critic", "particle_long_common_critic_common_actor", "particle_long_sac", "navigation_sharebuffer", "navigation_5_step_no_model", "navigation_5_step_model","navigation_20_step_no_model"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
+# logs = ["particle_long", "particle_long_sac", "navigation_sharebuffer"]
+# plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+#
+# logs = ["navigation_no_model_improved_4", "navigation_model_improved_4","navigation_no_model_improved_4_sac", "navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_no_model_improved", "navigation_model_improved"]
+# plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+#
 
-logs = ["navigation_no_model_improved_4", "navigation_model_improved_4","navigation_no_model_improved_4_sac", "navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_no_model_improved", "navigation_model_improved"]
-plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+# logs = ["navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_model_improved_20_nonorm_lowlr", "navigation_model_cheetah"]
+logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_simple",
+        # "navigation_model_cheetah_correct", , "navigation_model_cheetah",
+        # "navigation_model_cheetah_simple_2",
+        # "navigation_model_cheetah_simple_200",
+        # "navigation_model_cheetah_simple_512",
+        # "navigation_model_cheetah_simple_lowreg",
+        "navigation_model_cheetah_improved",
+        "navigation_no_model_cheetah_improved",
+        "particle_long"]
 
-
-logs = ["navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_model_improved_20_nonorm_lowlr"]
-plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved"]
+plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
 # plot_all_run_logs(logs, var="score_collision", plot_janner=False, use_moving_average=True, var_name="Reward Collisions")
 # plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward Total")
 

@@ -217,7 +217,7 @@ class MASAC:
                 actor_target.to(self.device)
                 actor_optimizer = torch.optim.Adam(actor.parameters(),
                                                    lr=self.par.lr_actor,
-                                                   weight_decay=0.001)
+                                                   weight_decay=0.0001)
             if not self.par.use_common_critic:
                 critics = [Critic(critic_input_size, self.par.hidden_dims_critic) for i in range(2)]
                 critics_target = copy.deepcopy(critics)
@@ -274,7 +274,7 @@ class MASAC:
                 #     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
                 #     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
 
-        if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*500:
+        if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*100:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()

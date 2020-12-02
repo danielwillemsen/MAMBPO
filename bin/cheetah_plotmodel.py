@@ -209,8 +209,8 @@ if __name__ == '__main__':
     # execution loop
     n_runs = 3
     logdata = dict()
-    logpath = "./logs/"
-    logname = "cheetah_degraded_test_1000_40_b0.4"
+    logpath = "../logs/"
+    logname = "test"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -230,7 +230,7 @@ if __name__ == '__main__':
 
             for steps in [40]:
                 #
-                algname = "model_degraded"
+                algname = "model40"
 
                 if algname == "model_degraded":
                     env_fake = EnvWrapper("gym", name)
