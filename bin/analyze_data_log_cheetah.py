@@ -475,15 +475,17 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
                 plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
                                  data_temp['y'] + data_temp['std'], color=colors[alg],
                                  alpha=0.25)
-    steps_max = 15000
+    steps_max = 5000
+    plt.figure(figsize=(5,4))
     for log in logs:
         data = torch.load("../logs/" + log + ".p", map_location="cpu")
         for key in data.keys():
                 plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
-    plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
+    # plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
     plt.xlim(1., steps_max)
     plt.xlabel("Episode")
-    plt.ylim(-200,-120)
+    plt.ylim(-230,-120)
+    #plt.ylim(0.,250.)
     plt.ylabel(var_name)
     plt.legend()
     plt.grid()
@@ -524,9 +526,12 @@ def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False)
     # elif "navigation_sharebuffer" in name:
     #     name = "SAC (Shared Buffer)"
     elif "no_model" in name:
-        name = "Tuned MASAC"
+        name = "Multi-Agent Actor-Critic"
     elif "model" in name:
-        name = "Tuned Model-Based MASAC"
+        name = "Multi-Agent Model-Based Actor-Critic"
+    elif "tag_masac" in name:
+        name = "Multi-Agent Actor-Critic"
+
     # else:
     #     name = "MASAC"# (Model-Based)"
     plt.plot(steps, mean_scores, label=name)
@@ -783,6 +788,24 @@ def plot_mse_noise(logs, data, its):
 
     plt.show()
 
+def count_rew_greater_0(logs):
+    for log in logs:
+        data = torch.load("../logs/" + log + ".p", map_location="cpu")
+        for key in data.keys():
+            count_tot = 0
+            count_rew = 0
+            for run in data[key]["runs"]:
+                for (ep, _, _, scores) in run["score"]:
+                    if ep>1000 and ep<=2000:
+                        if scores[0] > 0:
+                            count_rew += 1
+                        count_tot += 1
+            print(log, count_tot)
+            print(log, count_rew)
+            print("Chance of catching prey:", float(count_rew)/float(count_tot))
+
+        # plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
+
 # logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
 # logs = [ "4_agent", "4_agent_lowlr"]
 # logs = [ "4_agent_new", "4_agent_lowlr"]
@@ -807,115 +830,11 @@ logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_
         "navigation_model_cheetah_improved",
         "navigation_no_model_cheetah_improved",
         "particle_long"]
+logs = ["tag_masac_model", "tag_masac", "tag_masac_model_10"]
+# count_rew_greater_0(logs)
 
-logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved"]
+# plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
+logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved", "nav_masac_model", "nav_masac_model_5", "nav_masac_model_5_500","nav_masac"]
+#plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
+logs = [ "nav_masac_model_5_500", "nav_masac_model_5_1000", "nav_masac_5_500", "nav_masac_model_10_1000", "nav_masac"]
 plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
-# plot_all_run_logs(logs, var="score_collision", plot_janner=False, use_moving_average=True, var_name="Reward Collisions")
-# plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward Total")
-
-# # plot_single_run(data, plot_janner=True, var="score_greedy")
-# plot_all_run(data, plot_janner=True, var="score_greedy")
-# # plot_all_run(data, plot_janner=True, var="score_greedy", baseline="cheetah_plotmodel_4layers_regulated_2", baseline_name="model_regulated")
-# # analyze_model_obs_statistics_degraded(data, 5)
-#
-# logs = ["cheetah_plotmodel_4layers_3"]
-# plot_mse_perf(logs, [3,5,6,7,8,9])
-#
-# logs = ["cheetah_degraded_test",
-#         "cheetah_degraded_test_2000_10",
-#         "cheetah_degraded_test_1000_20",
-#         "cheetah_degraded_test_2000_20",
-#         "cheetah_degraded_test_1000_40",
-#         "cheetah_degraded_test_2000_40",
-#         "cheetah_degraded_test_1000_40_0.1",
-#         "cheetah_degraded_test_1000_40_0.2",
-#         "cheetah_degraded_test_1000_40_0.4",
-#         "cheetah_degraded_test_4000_40",
-#         "cheetah_degraded_test_1000_40_nodelay",
-#         "cheetah_degraded_test_1000_40_0.8",
-#         "cheetah_degraded_test_1000_40_b0.1",
-#         "cheetah_degraded_test_1000_40_b0.2",
-#         "cheetah_degraded_test_1000_40_b0.4"]
-# logs = ["cheetah_degraded_test_1000_40",
-#         "cheetah_degraded_test_1000_40_0.1",
-#         "cheetah_degraded_test_1000_40_0.2",
-#         "cheetah_degraded_test_1000_40_0.4",
-#         "cheetah_degraded_test_1000_40_0.8",
-#         "cheetah_degraded_test_1000_40_b0.1",
-#         "cheetah_degraded_test_1000_40_b0.2",
-#         "cheetah_degraded_test_1000_40_b0.4"]
-# logs = ["cheetah_degraded_test_1000_40",
-#         "cheetah_plotmodel_4layers_3"]
-# plot_all_run_logs(logs, var="score_greedy")
-# logs = ["cheetah_plotmodel_4layers_3"]
-# # logs_deg = [#"cheetah_degraded_test_1000_40",
-# #         #"cheetah_degraded_test_1000_40_0.1",
-# #         #"cheetah_degraded_test_1000_40_0.2",
-# #         #"cheetah_degraded_test_1000_40_0.4",
-# #             #"cheetah_degraded_test_1000_40_0.8",
-# #             "cheetah_degraded_test_1000_40_b0.1",
-# #             ]
-# #
-# # plot_mse_perf_all(logs_deg, logs)
-# logs_deg = ["cheetah_degraded_test_1000_40",
-#         "cheetah_degraded_test_1000_40_0.1",
-#         "cheetah_degraded_test_1000_40_0.2",
-#         "cheetah_degraded_test_1000_40_0.4",]
-#         # "cheetah_degraded_test_1000_40_0.8",
-#         #"cheetah_degraded_test_1000_40_b0.1",
-#         #"cheetah_degraded_test_1000_40_b0.2",
-#         #"cheetah_degraded_test_1000_40_b0.4"]
-#
-#
-# plot_mse_perf_all_mean(logs_deg, logs, its=[1,2,4])
-#plot_mse_perf(logs, [2])
-#plot_mse_noise(logs, data, [1, 3, 5])
-
-# #
-# logs = ["cheetah_degraded_test",
-#         "cheetah_degraded_test_2000_10",
-#         "cheetah_degraded_test_1000_20",
-#         "cheetah_degraded_test_2000_20",
-#         "cheetah_degraded_test_1000_40",
-#         "cheetah_degraded_test_2000_40",
-#         "cheetah_degraded_test_1000_40_0.1"]
-# plot_mse_noise(logs, data, [1, 3, 5, 9])
-#analyze_model(data, 0)
-#analyze_model(data, 1)
-# plot_model_vis(data, 1)
-# analyze_model(data, 0)
-# # analyze_model(data, 10)
-# analyze_model_obs_statistics(data, 0)
-# #
-# analyze_model_obs_statistics(data, 0)
-# analyze_model_obs_statistics(data, 1)
-# analyze_model_obs_statistics(data, 2)
-# analyze_model_obs_statistics_naive(data, 0)
-# analyze_model_obs_statistics(data, 9)
-
-# # analyze_model(data, 1)
-# # # analyze_model(data, 10)
-# analyze_model_obs_statistics(data, 10)
-# #
-# # analyze_model(data, 2)
-# # # analyze_model(data, 10)
-# analyze_model_obs_statistics(data, 2)
-# #
-# # analyze_model(data, 5)
-# # # analyze_model(data, 10)
-# analyze_model_obs_statistics(data, 5)
-#
-# # analyze_model(data, 10)
-# # # analyze_model(data, 10)
-# analyze_model_obs_statistics(data, 10)
-
-#analyze_mean_model_obs_corr(data, [0,1,2,5,8])
-#analyze_model_statistics(data, 0)
-#analyze_model_statistics(data, 2)
-#analyze_model_statistics(data, 5)
-#
-# plot_single_run(data, var="score_greedy")
-# plot_all_run(data, var="score_greedy")
-# #
-#plot_model_vis(data, 0)
-#plot_model_vis(data, 1)

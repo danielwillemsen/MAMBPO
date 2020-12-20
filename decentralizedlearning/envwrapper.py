@@ -12,6 +12,8 @@ from waypoints import WaypointsEnv
 from circle import CircleEnv
 from make_env import make_env
 from gym.spaces import Box
+# from decentralizedlearning.submodules.schroeder.make_env import make_env as make_env_schroeder
+
 try:
     from crossing import CrossingEnv
     from continuouscrossing import ContinuousCrossingEnv
@@ -38,10 +40,11 @@ class EnvWrapper:
         :param kwargs:
         """
         # Check if suite name is correct and can be handled
-        supported_suites = ["gym", "particle", "custom", "gym-record", "multiagent_mujoco"]
+        supported_suites = ["gym", "particle", "custom", "gym-record", "multiagent_mujoco", "schroeder"]
         assert suite in supported_suites, "Suite should be in {} but was {}".format(str(supported_suites), suite)
         self.suite = suite
         self.wrapped_env = None
+        self.env_name = None
         video_dir_name = str(kwargs.get("video_dir_name", "./logs/videos/"))
         # Setup environment for "gym" suite.
         if suite =="gym-record":
@@ -68,8 +71,23 @@ class EnvWrapper:
             self.observation_space = self.env.observation_space
             print(self.env)
         # Setup environment for "particle" suite.
-        if suite=="particle":
+        if suite=="particle" and env_name=="simple_tag_fixed":
             self.env = make_env(env_name, benchmark=False)
+            self.env_name = "simple_tag_fixed"
+            self.action_space = self.env.action_space[:-1]
+            self.n_agents = len(self.action_space)
+            self.observation_space = self.env.observation_space[:-1]
+            # Particle suite does not have proper action spaces, hardcoded in here. ->>> wrong. it is just discrete.
+            for act_space in self.action_space:
+                # act_space.low = np.zeros(8) - 1.0
+                # act_space.high = np.zeros(8) + 1.0
+                act_space.shape = (act_space.n,)
+
+        elif suite=="particle" or suite=="schroeder":
+            if suite=="particle":
+                self.env = make_env(env_name, benchmark=False)
+            else:
+                self.env = make_env_schroeder(env_name, benchmark=False)
             # self.scenario = scenarios.load(env_name).Scenario()
             # self.world = self.scenario.make_world()
             # self.env = MultiAgentEnv(self.world, self.scenario.reset_world,
@@ -79,10 +97,11 @@ class EnvWrapper:
             self.n_agents = len(self.action_space)
             self.observation_space = self.env.observation_space 
             # Particle suite does not have proper action spaces, hardcoded in here. ->>> wrong. it is just discrete.
-            for act_space in self.action_space:
-                # act_space.low = np.zeros(8) - 1.0
-                # act_space.high = np.zeros(8) + 1.0
-                act_space.shape = (act_space.n,)
+            # if not env_name in ["simple_tag_coop", "simple_tag_coop_partial_obs"]:
+            #     for act_space in self.action_space:
+            #         # act_space.low = np.zeros(8) - 1.0
+            #         # act_space.high = np.zeros(8) + 1.0
+            #         act_space.shape = (act_space.n,)
         # Setup multiagent_mujoco
         if suite== "multiagent_mujoco":
             env_args = {"scenario": "HalfCheetah-v2",
@@ -110,12 +129,19 @@ class EnvWrapper:
             rewards = [reward for i in range(self.n_agents)]
             observations = self.env.get_obs()
             return observations, rewards, [terminated], info
+        if self.env_name == "simple_tag_fixed":
+            actions.append(np.array([0.25, 0.25, 0.25, 0.25, 0.25]))
+            obs_n, reward_n, done_n, info_n = self.env.step(actions)
+            return obs_n[:-1], reward_n[:-1], done_n[:-1], info_n
         return self.env.step(actions)
     
     def reset(self):
         """reset."""
         if self.suite == "gym" or self.suite == "gym-record":
             return [self.env.reset()]
+        if self.env_name == "simple_tag_fixed":
+            obs_n = self.env.reset()
+            return obs_n[:-1]
         return self.env.reset()
 
     def get_state(self):

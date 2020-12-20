@@ -213,8 +213,14 @@ class EnsembleModel(nn.Module):
         return l1
 
     def step_single(self, observation, action, **kwargs):
-        o = torch.tensor(observation, device=self.device, dtype=torch.float)
-        a = torch.tensor(action, device=self.device, dtype=torch.float)
+        if type(observation) == list:
+            o = torch.tensor(np.concatenate(observation,axis=0), device=self.device, dtype=torch.float)
+        else:
+            o = torch.tensor(observation, device=self.device, dtype=torch.float)
+        if type(action) == list:
+            a = torch.tensor(np.concatenate(action,axis=0), device=self.device, dtype=torch.float)
+        else:
+            a = torch.tensor(action, device=self.device, dtype=torch.float)
         o_next_pred, r_pred = self.forward_elites(o, a)
         mu_o = o_next_pred[0]
         mu_r = r_pred[0]
@@ -281,7 +287,7 @@ class EnsembleModel(nn.Module):
     #     return
     def train_models(self, optim, buffer, **kwargs):
         batch_size = 512
-        n_steps_model = 200
+        n_steps_model = 500 #was 200
         for step in range(n_steps_model):
             self.update_step(optim, buffer.sample_tensors(n=batch_size))
         self.logger.info("Stopped.")

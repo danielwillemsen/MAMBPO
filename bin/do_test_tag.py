@@ -30,7 +30,7 @@ def scale_action(env, agent_id, action):
         return action
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False, trainer=None):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -122,12 +122,12 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
 
         data_log.set_episode(i)
         # logger.info("episode:" + str(i))
-        # if i % 20 == 0:
-        #     generate_statistics(agents, record_env, data_log)
+        if i % 250 == 0:
+            generate_statistics(trainer, agents, record_env, data_log)
         # Sometimes generate val data
         # if i % 2 == 0:
         #     run_episode(env, agents, eval=False, generate_val_data=True)
-        score, step, extra_data = run_episode(env, agents, render=True, store_data=True, trainer=trainer)
+        score, step, extra_data = run_episode(env, agents, render=False, store_data=True, trainer=trainer)
         logger.info("Score: " + str(score))
         step_tot += step
         data_log.set_step(step_tot)
@@ -181,6 +181,7 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
         steps.append(step_tot)
         if n_steps and step_tot > n_steps:
             break
+
         # logger.info("score_eval:"+str(score_eval))
         if i % 50 == 0:
             logger.info("Saving log...")
@@ -192,9 +193,9 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
     return {"scores": scores, "steps": steps, "scores_eval": scores_eval, "times": times}
 
 
-def generate_statistics(agents, record_env, data_log):
-    if record_env is not None:
-        score, _, statistics = run_episode(record_env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
+def generate_statistics(trainer, agents, record_env, data_log):
+    # if record_env is not None:
+    #     score, _, statistics = run_episode(record_env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
 
     # Test Model
     # if agents[0].model:
@@ -215,16 +216,18 @@ def generate_statistics(agents, record_env, data_log):
 
     # Store model, policy and actor
     networks = []
-    # for agent in agents:
-    #     if agent.model:
-    #         networks.append({"actor": agent.actor.state_dict(),
-    #                          "critics": [critic.state_dict() for critic in agent.critics],
-    #                          "model": agent.model.state_dict()})
-    #     else:
-    #         networks.append({"actor": agent.actor.state_dict(),
-    #                          "critics": [critic.state_dict() for critic in agent.critics],
-    #                          "model": None})
-    data_log.log_var("networks", networks)
+    for agent in agents:
+        if agent.model:
+            networks.append({"actor": agent.actor.state_dict(),
+                             "critics": [critic.state_dict() for critic in agent.critics],
+                             "model": agent.model.state_dict()})
+        else:
+            networks.append({"actor": agent.actor.state_dict(),
+                             "critics": [critic.state_dict() for critic in agent.critics],
+                             "model": None})
+    if trainer.model:
+        data_log.log_var("networks_model", trainer.model.state_dict())
+    data_log.log_var("networks_agents", networks)
 
 
 
@@ -273,7 +276,7 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "simple_tag_fixed"
+    name = "simple_spread" #"simple_spread"
 
     # env = EnvWrapper("custom", name)
     # env.env.render()
@@ -281,7 +284,7 @@ if __name__ == '__main__':
     n_runs = 3
     logdata = dict()
     logpath = "./logs/"
-    logname = "test_tag"
+    logname = "nav_masac_model_10_500"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -306,6 +309,6 @@ if __name__ == '__main__':
 
                 par = get_hyperpar("MAMODEL_cheetah", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
-                record_env = EnvWrapper("multiagent_mujoco", name, n_agents=n_agent, randomized=True)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=501*1000,
+                record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=25*5001,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)

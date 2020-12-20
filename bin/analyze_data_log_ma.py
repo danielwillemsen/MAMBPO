@@ -7,18 +7,18 @@ from decentralizedlearning.run_utils import run_episode
 from decentralizedlearning.algs.configs import config_cheetah
 from decentralizedlearning.algs.models import DegradedSim
 from decentralizedlearning.algs.models import EnsembleModel
-
+from decentralizedlearning.algs.masac import MASAC, MASACAgent
 import torch
 import random
 from scipy.stats import pearsonr
 
-name = "cheetah_degraded_test"
+name = "nav_masac_model_10_1000"
 #cheetah_plotmodel_4layers_regulated_2
-name_run = "model_degraded"
-data = torch.load("../logs/" + name + ".p", map_location="cpu")
+name_run = "SAC4"
+# data = torch.load("../logs/" + name + ".p", map_location="cpu")
 a =2
 
-def moving_average(a, n=50) :
+def moving_average(a, n=50):
     b = np.zeros(a.size)
     for i in range(len(a)):
         if i>=n:
@@ -27,7 +27,7 @@ def moving_average(a, n=50) :
             b[i] = np.mean(a[0:i+1])
     return b
 
-def moving_average_2d(a, n=200) :
+def moving_average_2d(a, n=200):
     b = np.zeros(a.shape)
     for i in range(a.shape[1]):
         if i>=n:
@@ -47,26 +47,26 @@ def find_nearest_mult(array, values):
     return idx
 
 def analyze_model(data, it, run=0):
-    agents, env = setup_agent_env(data, it, run)
+    trainer, agents, env = setup_agent_env(data, it, run)
 
     score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
     print("Score: " + str(score))
-    n_steps = 100
-    if agents[0].model:
+    n_steps = 25
+    if trainer.model:
         rewards = statistics["rewards"]
         observations = statistics["observations"]
         actions = statistics["actions"]
-        observation = observations[0][0]
+        observation = observations[0]
         rews_pred_mult = []
         start = 000
         for rollout in range(5):
-            observation = observations[start][0]
+            observation = np.concatenate(observations[start],axis=0)
             rews_real = []
             rews_pred = []
             for step in range(n_steps):
                 rews_real.append(rewards[start+step][0])
-                action = actions[start + step][0]
-                observation, rew_predict = agents[0].model.step_single(observation, action)
+                action = actions[start + step]
+                observation, rew_predict = trainer.model.step_single(observation, action)
                 rews_pred.append(rew_predict[0])
             rews_pred_mult.append(rews_pred)
     rews_real_cum = np.cumsum(rews_real)
@@ -95,7 +95,7 @@ def analyze_model(data, it, run=0):
     plt.xlabel("Timestep")
     plt.ylabel("Cumulative reward")
     plt.title("Rollout after training for " + str(it*10) + " episodes")
-    plt.ylim(-100,250)
+    # plt.ylim(-100,250)
     plt.legend()
     plt.show()
 
@@ -372,18 +372,21 @@ def analyze_mean_model_obs_corr(data, its, run=0):
     plt.show()
 
 def setup_agent_env(data, it, run, actor_it=None):
-    env = EnvWrapper("gym", "HalfCheetah-v2")
+    env = EnvWrapper("particle", "simple_spread")
     if not actor_it:
         actor_it = it
-    agents = [SAC(env.observation_space[0].shape[0], env.action_space[0].shape[0], use_model=True,
-                  hidden_dims_model=(200, 200, 200, 200))]
-    for agent in agents:
-        agent.actor.load_state_dict(data[name_run]["runs"][run]["networks"][actor_it][3][0]["actor"])
-        for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks"][it][3][0]["critics"]):
-            critic.load_state_dict(state_dict)
-        if type(agent.model) == EnsembleModel and data[name_run]["runs"][run]["networks"][it][3][0]["model"] is not None:
-            agent.model.load_state_dict(data[name_run]["runs"][run]["networks"][it][3][0]["model"])
-    return agents, env
+    trainer = MASAC(env.n_agents, env.observation_space, env.action_space,
+                    use_model=True,
+                    hidden_dims_model=(200,200,200,200))
+    agents = trainer.agents
+    trainer.model.load_state_dict(data[name_run]["runs"][0]["networks_model"][10][3])
+    # for agent in agents:
+    #     agent.actor.load_state_dict(data[name_run]["runs"][run]["networks"][actor_it][3][0]["actor"])
+    #     for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks"][it][3][0]["critics"]):
+    #         critic.load_state_dict(state_dict)
+    #     if type(agent.model) == EnsembleModel and data[name_run]["runs"][run]["networks"][it][3][0]["model"] is not None:
+    #         agent.model.load_state_dict(data[name_run]["runs"][run]["networks"][it][3][0]["model"])
+    return trainer, agents, env
 
 def setup_agent_env2(run, it, actor_it=None):
     env = EnvWrapper("gym", "HalfCheetah-v2")
@@ -484,7 +487,7 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
     # plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
     plt.xlim(1., steps_max)
     plt.xlabel("Episode")
-    plt.ylim(-230,-120)
+    plt.ylim(-200,-120)
     #plt.ylim(0.,250.)
     plt.ylabel(var_name)
     plt.legend()
@@ -806,6 +809,8 @@ def count_rew_greater_0(logs):
 
         # plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
 
+# analyze_model(data, 0, run=0)
+
 # logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
 # logs = [ "4_agent", "4_agent_lowlr"]
 # logs = [ "4_agent_new", "4_agent_lowlr"]
@@ -837,4 +842,5 @@ logs = ["tag_masac_model", "tag_masac", "tag_masac_model_10"]
 logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved", "nav_masac_model", "nav_masac_model_5", "nav_masac_model_5_500","nav_masac"]
 #plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
 logs = [ "nav_masac_model_5_500", "nav_masac_model_5_1000", "nav_masac_5_500", "nav_masac_model_10_1000", "nav_masac"]
+logs = ["nav_masac_model_5_500", "nav_masac"]
 plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
