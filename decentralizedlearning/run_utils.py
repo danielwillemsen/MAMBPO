@@ -9,62 +9,83 @@ import pickle as p
 import time
 import os
 import logging
+from gym import spaces
 
 def scale_action(env, agent_id, action):
-    return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
+    if not isinstance(env.action_space[agent_id], spaces.Discrete):
+        return (env.action_space[agent_id].high - env.action_space[agent_id].low) * action * 0.5
+    else:
+        return action
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=1000, store_data=False, store_states=False):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
     done_n = [False for i in range(len(agents))]
+    rewards_target = [0.0 for i in range(len(agents))]
+    rewards_collision = [0.0 for i in range(len(agents))]
     if store_data:
         observations = []
         rewards = []
+        rewards_details = {"rewards_target": [], "rewards_collision": []}
         actions = []
-        states = []
     # Start env
     for i in range(steps):
+
         # query for action from each agent's policy
         act_n = []
-        if store_data:
+        if store_data or True:
             observations.append(obs_n)
             actions.append([])
             rewards.append(reward_n)
-            if store_states:
-                states.append(env.get_state())
-
+        # Take actions
+        action_list = []
         for j, agent in enumerate(agents):
             action_unscaled = agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
                                                      generate_val_data=generate_val_data, greedy_eval=greedy_eval)
+            action_list.append(action_unscaled)
             if store_data:
                 actions[-1].append(action_unscaled)
             action = scale_action(env, j, action_unscaled)
             act_n.append(action)
+        if trainer is not None and not eval:
+            trainer.step(obs_n, reward_n, action_list, done=done_n)
         # step environment
-        obs_n, reward_n, done_n, _ = env.step(act_n)
+        obs_n, reward_n, done_n, info_n = env.step(act_n)
+        rewards_target = [0.0 for i in range(len(agents))]
+        rewards_collision = [0.0 for i in range(len(agents))]
+        # for j, tup in enumerate(info_n["n"]):
+        #     rewards_collision[j] = tup[1]
+        #     rewards_target[j] = tup[2]
+        # rewards_collision = []#reward_details["rewards_collision"]
+        # rewards_target = []#reward_details["rewards_target"]
         for j, r in enumerate(reward_n):
             reward_tot[j] += r
         if done_n[0]:
             for j, agent in enumerate(agents):
-                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[j], eval=eval,
+                action = scale_action(env, j, agent.step(obs_n[j], reward_n[j], done=done_n[0], eval=eval,
                                                          generate_val_data=generate_val_data, greedy_eval=greedy_eval))
                 act_n.append(action)
                 agent.reset()
-            print("Episode finished after {} timesteps".format(i + 1))
+            # print("Episode finished after {} timesteps".format(i + 1))
             break
+        # if store_data or True:
+        #     rewards_details["rewards_target"].append(rewards_target)
+        #     rewards_details["rewards_collision"].append(rewards_collision)
+
         # render all agent views
         if render:
             env.render()
     for j, agent in enumerate(agents):
         agent.reset()
+    if trainer is not None:
+        trainer.reset()
     if not store_data:
         return reward_tot, i + 1
     else:
-        extra_data = {"observations": observations, "actions": actions, "rewards": rewards, "states": states}
+        extra_data = {"observations": observations, "actions": actions, "rewards": rewards, "rewards_details": rewards_details}
         return reward_tot, i + 1, extra_data
-
 
 def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_data=False, record_env=None):
     logger = logging.getLogger('root')

@@ -12,10 +12,10 @@ import torch
 import random
 from scipy.stats import pearsonr
 
-name = "nav_masac_model_10_1000"
+name = "nav_masac_1_noauto_0.02"
 #cheetah_plotmodel_4layers_regulated_2
 name_run = "SAC4"
-# data = torch.load("../logs/" + name + ".p", map_location="cpu")
+data = torch.load("../logs/" + name + ".p", map_location="cpu")
 a =2
 
 def moving_average(a, n=50):
@@ -45,6 +45,12 @@ def find_nearest_mult(array, values):
     array = np.asarray(array)
     idx = (np.abs(np.expand_dims(array, 1) - np.expand_dims(values, 0))).argmin(axis=0)
     return idx
+
+def play_game(data, it, run=0):
+    trainer, agents, env = setup_agent_env(data, it, run)
+
+    score, _, statistics = run_episode(env, agents, eval=True, render=True, greedy_eval=False, store_data=True)
+    print(score)
 
 def analyze_model(data, it, run=0):
     trainer, agents, env = setup_agent_env(data, it, run)
@@ -376,14 +382,14 @@ def setup_agent_env(data, it, run, actor_it=None):
     if not actor_it:
         actor_it = it
     trainer = MASAC(env.n_agents, env.observation_space, env.action_space,
-                    use_model=True,
+                    use_model=True, hidden_dims_actor=(128,128),
                     hidden_dims_model=(200,200,200,200))
     agents = trainer.agents
-    trainer.model.load_state_dict(data[name_run]["runs"][0]["networks_model"][10][3])
-    # for agent in agents:
-    #     agent.actor.load_state_dict(data[name_run]["runs"][run]["networks"][actor_it][3][0]["actor"])
-    #     for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks"][it][3][0]["critics"]):
-    #         critic.load_state_dict(state_dict)
+    # trainer.model.load_state_dict(data[name_run]["runs"][0]["networks_model"][10][3])
+    for agent_n, agent in enumerate(agents):
+        agent.actor.load_state_dict(data[name_run]["runs"][run]["networks_agents"][actor_it][3][agent_n]["actor"])
+        for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks_agents"][it][3][agent_n]["critics"]):
+            critic.load_state_dict(state_dict)
     #     if type(agent.model) == EnsembleModel and data[name_run]["runs"][run]["networks"][it][3][0]["model"] is not None:
     #         agent.model.load_state_dict(data[name_run]["runs"][run]["networks"][it][3][0]["model"])
     return trainer, agents, env
@@ -487,8 +493,8 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
     # plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
     plt.xlim(1., steps_max)
     plt.xlabel("Episode")
-    plt.ylim(-200,-120)
-    #plt.ylim(0.,250.)
+    #plt.ylim(-200,-120)
+    plt.ylim(0.,250.)
     plt.ylabel(var_name)
     plt.legend()
     plt.grid()
@@ -825,6 +831,7 @@ def count_rew_greater_0(logs):
 # plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
 #
 
+play_game(data, 20, 0)
 # logs = ["navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_model_improved_20_nonorm_lowlr", "navigation_model_cheetah"]
 logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_simple",
         # "navigation_model_cheetah_correct", , "navigation_model_cheetah",
@@ -835,12 +842,14 @@ logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_
         "navigation_model_cheetah_improved",
         "navigation_no_model_cheetah_improved",
         "particle_long"]
-logs = ["tag_masac_model", "tag_masac", "tag_masac_model_10"]
+logs = ["tag_masac_model", "tag_masac", "tag_masac_model_10", "tag_masac_1_auto_2"]
 # count_rew_greater_0(logs)
 
-# plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
+plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
 logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved", "nav_masac_model", "nav_masac_model_5", "nav_masac_model_5_500","nav_masac"]
 #plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
 logs = [ "nav_masac_model_5_500", "nav_masac_model_5_1000", "nav_masac_5_500", "nav_masac_model_10_1000", "nav_masac"]
-logs = ["nav_masac_model_5_500", "nav_masac"]
+logs = ["nav_masac_model_5_500", "nav_masac_5_500", "nav_masac", "nav_masac_model_10_500", "nav_masac_1_noauto_0.05", "nav_masac_1_noauto_0.1", "nav_masac_1_noauto_0.02", "nav_masac_model_10_500_noauto", "nav_masac_1_auto_2"]
+logs = ["nav_masac_model_5_500", "nav_masac", "nav_masac_1_auto_2", "nav_masac_1_noauto_0.02"]
+
 plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")

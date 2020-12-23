@@ -116,7 +116,8 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
     #     while len(agents[0].val_buffer) < agents[0].val_buffer.n_samples:
     #         score, _ = run_episode(env, agents, eval=False, generate_val_data=True, trainer=trainer)
     scores_list = []
-
+    alphas = [agent.alpha for agent in trainer.agents]
+    data_log.log_var("alphas", alphas)
     for i in ep_generator:
         logger.info("episode:" + str(i))
 
@@ -132,6 +133,9 @@ def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_da
         step_tot += step
         data_log.set_step(step_tot)
         data_log.log_var("score", score)
+        alphas = []
+        alphas = [agent.alpha for agent in trainer.agents]
+        data_log.log_var("alphas", alphas)
         rewards_collision = np.sum([sum(dat)-25 for dat in zip(*extra_data["rewards_details"]["rewards_collision"])])/2 #-25 is excluding self collisions.
         rewards_target = np.mean([np.mean(dat)/3. for dat in zip(*extra_data["rewards_details"]["rewards_target"])]) #/3 is average over 3 targets.
         #
@@ -276,15 +280,15 @@ if __name__ == '__main__':
     # Create environment
     #  "HalfCheetahBulletEnv-v0"
     # "ReacherBulletEnv-v0"
-    name = "simple_spread" #"simple_spread"
+    name = "simple_spread" #"simple_tag_coop"
 
     # env = EnvWrapper("custom", name)
     # env.env.render()
     # execution loop
-    n_runs = 3
+    n_runs = 5
     logdata = dict()
     logpath = "./logs/"
-    logname = "nav_masac_model_10_500"
+    logname = "nav_mambpo_5step_5run"
     logfile = logpath + logname
 
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
@@ -310,5 +314,5 @@ if __name__ == '__main__':
                 par = get_hyperpar("MAMODEL_cheetah", alg=algname)
                 agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
                 record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=25*5001,
+                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=25*10001,
                            record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)
