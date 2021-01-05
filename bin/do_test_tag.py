@@ -1,26 +1,19 @@
-import pickle as p
 import time
 import os, sys
 
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
-import pybullet_envs
-import argparse
+
 import numpy as np
 from envwrapper import EnvWrapper
 import itertools
-from decentralizedlearning.algs.hddpg import HDDPGAgent
-from decentralizedlearning.algs.td3 import TD3
-from decentralizedlearning.algs.modelbased import ModelAgent
 from decentralizedlearning.algs.sac import SAC
-from decentralizedlearning.algs.configs.config_cheetah import get_hyperpar
+from decentralizedlearning.algs.configs.config import get_hyperpar
 from decentralizedlearning.data_log import DataLog
 
 import logging
-import matplotlib.pyplot as plt
 from decentralizedlearning.algs.masac import MASAC
-from decentralizedlearning.algs.maddpg import MADDPG
 from gym import spaces
 
 def scale_action(env, agent_id, action):
@@ -31,17 +24,18 @@ def scale_action(env, agent_id, action):
 
 
 def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None):
+    """ Runs a single training or evaluation episode"""
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
     done_n = [False for i in range(len(agents))]
-    rewards_target = [0.0 for i in range(len(agents))]
-    rewards_collision = [0.0 for i in range(len(agents))]
+
     if store_data:
         observations = []
         rewards = []
         rewards_details = {"rewards_target": [], "rewards_collision": []}
         actions = []
+
     # Start env
     for i in range(steps):
 
@@ -65,13 +59,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             trainer.step(obs_n, reward_n, action_list, done=done_n)
         # step environment
         obs_n, reward_n, done_n, info_n = env.step(act_n)
-        rewards_target = [0.0 for i in range(len(agents))]
-        rewards_collision = [0.0 for i in range(len(agents))]
-        # for j, tup in enumerate(info_n["n"]):
-        #     rewards_collision[j] = tup[1]
-        #     rewards_target[j] = tup[2]
-        # rewards_collision = []#reward_details["rewards_collision"]
-        # rewards_target = []#reward_details["rewards_target"]
+
         for j, r in enumerate(reward_n):
             reward_tot[j] += r
         if done_n[0]:
@@ -80,11 +68,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
                                                          generate_val_data=generate_val_data, greedy_eval=greedy_eval))
                 act_n.append(action)
                 agent.reset()
-            # print("Episode finished after {} timesteps".format(i + 1))
             break
-        # if store_data or True:
-        #     rewards_details["rewards_target"].append(rewards_target)
-        #     rewards_details["rewards_collision"].append(rewards_collision)
 
         # render all agent views
         if render:
@@ -101,124 +85,61 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
 
 
 def train(env, agents, data_log, n_episodes=10000, n_steps=None, generate_val_data=False, record_env=None, trainer=None):
+    """ Performs a single training run"""
+    # Setup logging and start code
     logger = logging.getLogger('root')
-    scores = []
-    scores_eval = []
-    times = []
-    time_start = time.time()
     step_tot = 0
-    steps = []
-    ep_generator = range(n_episodes) if n_episodes else itertools.count()
-    logger.info(env.env.observation_space[0].high)
-
-    # if generate_val_data:
-    #     logger.info("Generating val data")
-    #     while len(agents[0].val_buffer) < agents[0].val_buffer.n_samples:
-    #         score, _ = run_episode(env, agents, eval=False, generate_val_data=True, trainer=trainer)
-    scores_list = []
+    logger.info(env.observation_space[0].high)
     alphas = [agent.alpha for agent in trainer.agents]
     data_log.log_var("alphas", alphas)
-    for i in ep_generator:
-        logger.info("episode:" + str(i))
 
+    ep_generator = range(n_episodes) if n_episodes else itertools.count()
+    # Start training
+    for i in ep_generator:
+        # Do some logging
+        logger.info("episode:" + str(i))
         data_log.set_episode(i)
-        # logger.info("episode:" + str(i))
-        if i % 250 == 0:
-            generate_statistics(trainer, agents, record_env, data_log)
-        # Sometimes generate val data
-        # if i % 2 == 0:
-        #     run_episode(env, agents, eval=False, generate_val_data=True)
+
+        # Periodically store networks
+        if i % 250 == 0: #was 25
+            store_networks(trainer, agents, data_log)
+
+        # Run a single episode
         score, step, extra_data = run_episode(env, agents, render=False, store_data=True, trainer=trainer)
+
+        # Do more logging
         logger.info("Score: " + str(score))
         step_tot += step
         data_log.set_step(step_tot)
         data_log.log_var("score", score)
-        alphas = []
         alphas = [agent.alpha for agent in trainer.agents]
         data_log.log_var("alphas", alphas)
-        rewards_collision = np.sum([sum(dat)-25 for dat in zip(*extra_data["rewards_details"]["rewards_collision"])])/2 #-25 is excluding self collisions.
-        rewards_target = np.mean([np.mean(dat)/3. for dat in zip(*extra_data["rewards_details"]["rewards_target"])]) #/3 is average over 3 targets.
-        #
-        # data_log.log_var("score_collision", rewards_collision)
-        # data_log.log_var("score_target", rewards_target)
-        #
-        # score2, _ = run_episode(env, agents, eval=True, render=False)
-        # data_log.log_var("score_greedy", score2)
 
-        # score_eval, _ = run_episode(env, agents, eval=True)
-        scores.append(score)
-        scores_list.append(np.mean(score))
-        # scores_eval.append(score_eval)
-        t = time.time() - time_start
-        times.append(t)
-        # if i%50 == 49:
-        #     logger.info("episode:" + str(i))
-        #     for i_23 in range(10):
-        #         score, step, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
-        #     scores_greedy = []
-        #     cols = []
-        #     dists = []
-        #     for e in range(50):
-        #         score_greedy, _, extra_data = run_episode(env, agents, render=False, eval=True, store_data=True, trainer=trainer)
-        #         scores_greedy.append(np.mean(score_greedy))
-        #         cols.append(np.sum([sum(dat) - 25 for dat in zip(
-        #             *extra_data["rewards_details"]["rewards_collision"])]) / 2 ) # -25 is excluding self collisions.
-        #         dists.append(np.mean([np.mean(dat) for dat in zip(
-        #             *extra_data["rewards_details"]["rewards_target"])]))  # /sum of distances over all 3 targets.
-        #
-        #     print("Mean score: " + str(np.mean(scores_list)))
-        #     logger.info("Mean score (greedy): " + str(np.mean(scores_greedy)))
-        #     data_log.log_var("mean_score_greedy", np.mean(scores_greedy))
-        #     print("Mean collisions (greedy): " + str(np.mean(cols)))
-        #     print("Mean dist (greedy): " + str(np.mean(dists)))
-
-
-            # scores_list = []
-            # logger.info("time_elapsed:" + str(t))
-            # logger.info("score:" + str(score))
-            # # logger.info("score_collision: " + str(rewards_collision))
-            # logger.info("score_target: " + str(rewards_target))
-
-            # logger.info("score_greedy:" + str(score2))
-        logger.info("step_tot:" + str(step_tot))
-
-        steps.append(step_tot)
+        # Break training loop
         if n_steps and step_tot > n_steps:
             break
 
-        # logger.info("score_eval:"+str(score_eval))
-        if i % 50 == 0:
+        #Periodically save logs
+        if i % 50 == 0: #was 5
             logger.info("Saving log...")
             data_log.save()
             logger.info("Saved log")
+
+    # Save logs one last time
     logger.info("Saving log...")
     data_log.save()
     logger.info("Saved log")
-    return {"scores": scores, "steps": steps, "scores_eval": scores_eval, "times": times}
+    return
 
 
-def generate_statistics(trainer, agents, record_env, data_log):
-    # if record_env is not None:
-    #     score, _, statistics = run_episode(record_env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
+def store_networks(trainer, agents, data_log):
+    """ Store networks of all agents in data log
 
-    # Test Model
-    # if agents[0].model:
-    #     rewards = statistics["rewards"]
-    #     observations = statistics["observations"]
-    #     actions = statistics["actions"]
-    #     observation = observations[0][0]
-    #     rews_real = []
-    #     rews_pred = []
-    #     for step in range(1000):
-    #         rews_real.append(rewards[step][0])
-    #         logger.info("stat_rew_real:" + str(rewards[step][0]))
-    #         action = actions[step][0]
-    #         observation, rew_predict = agents[0].model.step_single(observation, action)
-    #         logger.info("stat_rew_predict:" + str(rew_predict[0]))
-    #         rews_pred.append(rew_predict[0])
-    #     data_log.log_var("model_vis", {"real": rews_real, "pred": rews_pred})
-
-    # Store model, policy and actor
+    :param trainer: Trainer with model
+    :param agents: Agents
+    :param data_log: Data log to store model in
+    :return:
+    """
     networks = []
     for agent in agents:
         if agent.model:
@@ -235,84 +156,59 @@ def generate_statistics(trainer, agents, record_env, data_log):
 
 
 
-def single_run(env, agent_fn, logdata, data_log, seed, agent_kwargs=dict(), n_episodes=None, n_steps=None, record_env=None, name=None, trainer_fn=None):
+def single_run(env, trainer_fn, data_log, seed, agent_kwargs=dict(), n_steps=None, record_env=None, name=None):
+    """ Setup a single run and perform the run"""
+
+    # Setup logging
     logger = logging.getLogger(__name__)
     if not name:
-        name = agent_fn.__name__ + str(agent_kwargs)
+        name = trainer_fn.__name__ + str(agent_kwargs)
     logger.info("agent:" + name)
+    data_log.init_run(name)
 
-
-    # env.env.seed(seed=seed)
-    if name not in logdata:
-        logdata[name] = []
-
-    obs_n = env.reset()
-
-    if trainer_fn:
-        trainer = trainer_fn(env.n_agents, env.observation_space, env.action_space, **agent_kwargs)
-        agents = trainer.agents
-    else:
-        trainer = None
-        agents = []
-        for i in range(env.n_agents):
-            agents.append(agent_fn(env.observation_space[i].shape[0], env.action_space[i].shape[0], **agent_kwargs))
+    # Initialize Agents and environments
+    env.reset()
+    trainer = trainer_fn(env.n_agents, env.observation_space, env.action_space, **agent_kwargs)
+    agents = trainer.agents
     if agents[0].par.use_shared_replay_buffer:
         for agent in agents:
             agent.set_replay_buffer(agents[0].real_buffer)
 
-    data_log.init_run(name)
-
-    logdata[name].append(
-        train(env, agents, data_log, n_episodes=n_episodes, n_steps=n_steps, generate_val_data=True, record_env=record_env, trainer=trainer))
-    # env.close()
+    # Perform training
+    train(env, agents, data_log, n_steps=n_steps, generate_val_data=True, record_env=record_env, trainer=trainer)
 
 
 if __name__ == '__main__':
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--suite', type=str, default="gym", help='Environment Suite to use')
-    parser.add_argument('--name', type=str, default="Pendulum-v0", help='Environment name to use')
-    parser.add_argument('--alg', type=str, default="ModelAgent", help='Name of alg to use: hddpg or TD3')
-    args = parser.parse_args()
-    agent_dict = {"HDDPGAgent": HDDPGAgent, "TD3": TD3, "ModelAgent": ModelAgent}
-
-    # Create environment
-    #  "HalfCheetahBulletEnv-v0"
-    # "ReacherBulletEnv-v0"
-    name = "simple_spread" #"simple_tag_coop"
-
-    # env = EnvWrapper("custom", name)
-    # env.env.render()
-    # execution loop
-    n_runs = 5
-    logdata = dict()
-    logpath = "./logs/"
-    logname = "nav_mambpo_5step_5run"
+    """Main script to run experiments"""
+    name = "simple_spread"     # Environment name, select from: "HalfCheetah-v2", "simple_tag_coop", "simple_spread"
+    n_runs = 5                 # Amount of runs to do
+    logpath = "./logs/"         # Logging directory
+    logname = "nav_masac_5run"  # Name of log file
+    config_name = "default_masac"
+    suite = "particle"
+    n_steps = 25*5001
+    # Setup logging (to .log file)
     logfile = logpath + logname
-
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
     logger = logging.getLogger('root')
     handler = logging.StreamHandler(sys.stdout)
-
     handler.setLevel(logging.DEBUG)
     logger.addHandler(handler)
-    # name2 = "HalfCheetah-v2"
 
+    # Setup logging (to .p file)
     data_log = DataLog(logpath, logname)
+    logdata = dict()
 
-    if True:
-        for run in range(n_runs):
-            logger.info("run:" + str(run))
-            agent_fn = SAC
-            for n_agent in [4]:
+    # Further environment Setup
+    suite = "gym" if name == "HalfCheetah-v2" else "particle"
 
-                env = EnvWrapper("particle", name, n_agents=n_agent, randomized=False)
-                agent_fn = SAC
-                algname = "SAC"
-
-                par = get_hyperpar("MAMODEL_cheetah", alg=algname)
-                agent_kwargs = {"hyperpar": par, "discrete": True if isinstance(env.action_space[0], spaces.Discrete) else False}
-                record_env = EnvWrapper("particle", name, n_agents=n_agent, randomized=True)
-                single_run(env, agent_fn, logdata, data_log, run, agent_kwargs=agent_kwargs, n_steps=25*10001,
-                           record_env=record_env, name=algname+str(n_agent), trainer_fn=MASAC)
+    for run in range(n_runs):
+        logger.info("run:" + str(run))
+        agent_fn = SAC
+        for n_agent in [4]:
+            env = EnvWrapper(suite, name, n_agents=n_agent, randomized=False)
+            algname = "SAC"
+            par = get_hyperpar(config_name)
+            record_env = EnvWrapper(suite, name, n_agents=n_agent, randomized=True)
+            single_run(env, MASAC, data_log, run, agent_kwargs={"hyperpar": par}, n_steps=n_steps,
+                       record_env=record_env, name=name+config_name+logname)

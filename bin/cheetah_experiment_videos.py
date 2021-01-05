@@ -13,7 +13,7 @@ from decentralizedlearning.algs.hddpg import HDDPGAgent
 from decentralizedlearning.algs.td3 import TD3
 from decentralizedlearning.algs.modelbased import ModelAgent
 from decentralizedlearning.algs.sac import SAC
-from decentralizedlearning.algs.configs.config_cheetah import get_hyperpar
+from decentralizedlearning.algs.configs.config import get_hyperpar
 
 import logging
 import matplotlib.pyplot as plt

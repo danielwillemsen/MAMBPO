@@ -4,7 +4,7 @@ import numpy as np
 from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.envwrapper import EnvWrapper
 from decentralizedlearning.run_utils import run_episode
-from decentralizedlearning.algs.configs import config_cheetah
+from decentralizedlearning.algs.configs import config
 
 import torch
 import random

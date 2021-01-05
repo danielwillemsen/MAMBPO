@@ -167,15 +167,18 @@ class EnsembleModel(nn.Module):
             print("R corr_train", torch.sum(vx * vy) / (torch.sqrt(torch.sum(vx ** 2)) * torch.sqrt(torch.sum(vy ** 2))))
             print("Loss train", l1)
 
-        if True:
+        if self.use_stochastic:
             l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),1*((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
             l2 = torch.sum(torch.mean(torch.cat((log_var_o, 1*log_var_r), dim=-1),dim=(-1,-2)))
             #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
             #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
             #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
         else:
-            l1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
-            l2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
+            l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),1*((mu_r - target_r) * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
+            l2 = 0.#torch.sum(torch.mean(torch.cat((log_var_o, 1*log_var_r), dim=-1),dim=(-1,-2)))
+
+#            l1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
+#            l2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
             loss3 = 0.
         loss = l1+l2
 
@@ -286,8 +289,8 @@ class EnsembleModel(nn.Module):
     #     self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))
     #     return
     def train_models(self, optim, buffer, **kwargs):
-        batch_size = 512
-        n_steps_model = 500 #was 200
+        batch_size = 512 #was 512
+        n_steps_model = 500 #was 500 / 2000
         for step in range(n_steps_model):
             self.update_step(optim, buffer.sample_tensors(n=batch_size))
         self.logger.info("Stopped.")
@@ -401,8 +404,8 @@ class Model(nn.Module):
         """
         super().__init__()
         self.use_stochastic = use_stochastic
-        self.MAX_LOG_VAR = torch.tensor(-2., dtype=torch.float32)
-        self.MIN_LOG_VAR = torch.tensor(-5., dtype=torch.float32)
+        self.MAX_LOG_VAR = torch.tensor(-2., dtype=torch.float32) #was -2.
+        self.MIN_LOG_VAR = torch.tensor(-5., dtype=torch.float32) # was -5.
         layers = []
         #layers += [nn.Linear(input_dim, hidden_dims[0]), nn.BatchNorm1d(hidden_dims[0]), nn.LeakyReLU(), ]
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.LeakyReLU(), ]

@@ -187,6 +187,7 @@ class MASAC:
         self.step_i = 0
 
     def initialize_agents(self, n_agents):
+        """ Creates the agents with associated critics and actors"""
         agents = []
         critic_input_size = np.sum(self.obs_dims)+np.sum(self.action_dims) if self.par.use_centralized_critic \
             else self.obs_dims[0] + self.action_dims[0]
@@ -246,8 +247,6 @@ class MASAC:
 
     def step(self, o, r, a, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
         o, r, done, a = convert_multi_inputs_to_tensors(o, r, done, a, self.device)
-        # r+= 10.0
-        # self.logger.info(done)
         for agent in self.agents:
             agent.step_i += 1
         # Do training process step
@@ -266,13 +265,7 @@ class MASAC:
         if self.step_i % self.par.update_model_every_n_steps == 0:
             #Update model and generate new samples:
             if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
-                #for i in range(1*self.par.update_every_n_steps):
-                    #self.model.update_step(self.optimizer_model, self.real_buffer.sample_tensors())
                 self.model.train_models(self.optimizer_model, self.real_buffer, multistep_buffer=self.multistep_buffer)
-                #self.model.generate_batch(self.real_buffer.sample_tensors())
-                # if self.par.monitor_losses and self.step_i % (250) == 0:
-                #     self.model.log_loss(self.real_buffer.sample_tensors(), "train")
-                #     self.model.log_loss(self.val_buffer.sample_tensors(), "test")
 
         if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*100:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
@@ -423,8 +416,6 @@ class MASAC:
                         next_a_n.append(next_a)
                         if agent2 == agent:
                             next_logp_pi_n.append(next_logp_pi)
-                        # if np.random.rand()<0.01:
-                        #     print("LOGPOL:" + str(torch.mean(next_logp_pi)))
                     next_a = torch.cat(next_a_n, dim=-1)
                     next_logp_pi = torch.stack(next_logp_pi_n, dim=0).sum(dim=0) # How to calculate this?
                 for optimizer, critic in zip(agent.critics_optimizer, agent.critics):
@@ -438,11 +429,7 @@ class MASAC:
                     y = b["r"] + (1 - b["done"]) * self.par.gamma * (min_next_Q - agent.alpha * next_logp_pi)
 
                     loss = loss_critic(critic(b["o"], b["a"]).squeeze(), y,
-                                       f_hyst=self.par.f_hyst)#* 0.5  # 0.5 is to correspond with code of Janner
-                    # print(torch.mean(min_next_Q))
-                    # if np.random.rand() < 0.01:
-                    #     print("Mean target: ", torch.mean(y))
-                    #     print("LOSSQ:" + str(loss))
+                                       f_hyst=self.par.f_hyst)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()

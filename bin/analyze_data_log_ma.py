@@ -4,15 +4,16 @@ import numpy as np
 from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.envwrapper import EnvWrapper
 from decentralizedlearning.run_utils import run_episode
-from decentralizedlearning.algs.configs import config_cheetah
+from decentralizedlearning.algs.configs import config
 from decentralizedlearning.algs.models import DegradedSim
 from decentralizedlearning.algs.models import EnsembleModel
 from decentralizedlearning.algs.masac import MASAC, MASACAgent
 import torch
 import random
 from scipy.stats import pearsonr
+import pyglet
 
-name = "nav_masac_1_noauto_0.02"
+name = "tag_masac_1_auto_2"
 #cheetah_plotmodel_4layers_regulated_2
 name_run = "SAC4"
 data = torch.load("../logs/" + name + ".p", map_location="cpu")
@@ -47,30 +48,31 @@ def find_nearest_mult(array, values):
     return idx
 
 def play_game(data, it, run=0):
-    trainer, agents, env = setup_agent_env(data, it, run)
+    trainer, agents, env, _ = setup_agent_env(data, it, run)
 
     score, _, statistics = run_episode(env, agents, eval=True, render=True, greedy_eval=False, store_data=True)
+    pyglet.image.get_buffer_manager().get_color_buffer().save("test.png")
     print(score)
 
-def analyze_model(data, it, run=0):
-    trainer, agents, env = setup_agent_env(data, it, run)
+def analyze_model(data, it, run=0, env_name=None):
+    trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
 
     score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
     print("Score: " + str(score))
-    n_steps = 25
+    n_steps = 24
     if trainer.model:
         rewards = statistics["rewards"]
         observations = statistics["observations"]
         actions = statistics["actions"]
         observation = observations[0]
-        rews_pred_mult = []
+        rews_pred_mult = [0]
         start = 000
         for rollout in range(5):
             observation = np.concatenate(observations[start],axis=0)
             rews_real = []
             rews_pred = []
             for step in range(n_steps):
-                rews_real.append(rewards[start+step][0])
+                rews_real.append(rewards[start+step+1][0]) #We predict the next reward, thus +1 is needed.
                 action = actions[start + step]
                 observation, rew_predict = trainer.model.step_single(observation, action)
                 rews_pred.append(rew_predict[0])
@@ -100,34 +102,34 @@ def analyze_model(data, it, run=0):
 
     plt.xlabel("Timestep")
     plt.ylabel("Cumulative reward")
-    plt.title("Rollout after training for " + str(it*10) + " episodes")
+    plt.title("Rollout after training for " + ep + " episodes")
     # plt.ylim(-100,250)
     plt.legend()
     plt.show()
 
-def analyze_model_statistics(data, it, run=0):
-    agents, env = setup_agent_env(data, it, run)
-    rollout_mod = {1: [], 10:[], 50:[],100:[]}
-    rollout_real = {1: [], 10:[], 50:[],100:[]}
+def analyze_model_statistics(data, it, run=0, env_name=None):
+    trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
+    rollout_mod = {1: [], 2:[], 5:[]}
+    rollout_real = {1: [], 2:[], 5:[]}
 
-    for ep in range(50):
+    for ep in range(5):
         score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
         print("Score: " + str(score))
-        n_steps = 101
-        start = random.randint(0, 500)
-        if agents[0].model:
+        n_steps = 6
+        start = random.randint(0, 18)
+        if trainer.model:
             rewards = statistics["rewards"]
             observations = statistics["observations"]
             actions = statistics["actions"]
             rews_pred_mult = []
             for rollout in range(5):
-                observation = observations[start][0]
+                observation = np.concatenate(observations[start], axis=0)
                 rews_real = []
                 rews_pred = []
                 for step in range(n_steps):
-                    rews_real.append(rewards[start+step][0])
-                    action = actions[start + step][0]
-                    observation, rew_predict = agents[0].model.step_single(observation, action)
+                    rews_real.append(rewards[start+step+1][0])
+                    action = actions[start + step]
+                    observation, rew_predict = trainer.model.step_single(observation, action)
                     rews_pred.append(rew_predict[0])
                 rews_pred_mult.append(rews_pred)
         rews_real_cum = np.cumsum(rews_real)
@@ -147,7 +149,167 @@ def analyze_model_statistics(data, it, run=0):
         print("Mean Model-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(pred)))
         print("Overshoot-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str((np.mean(pred)-np.mean(target))/(np.mean(target))*100) + "%")
 
-        print("RMSE/Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE/np.mean(target)*100) + "%")
+        print("RMSE/Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE/np.mean(np.abs(target)*100)) + "%")
+
+
+def plot_model_statistics(data, its, run=0, env_name=None):
+    errors = []
+    errors_observations = None
+    episodes = []
+    for it in its:
+        trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
+        rollout_mod = {1: []}
+        rollout_real = {1: []}
+        observation = np.concatenate(env.reset())
+        print(len(observation))
+        if errors_observations is None:
+            errors_observations = [[] for obs in observation]
+        obs_real ={1: [[] for obs in observation]}
+        obs_mod = {1: [[] for obs in observation]}
+        episodes.append(int(ep))
+        for ep in range(100):
+            score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
+            print("Score: " + str(score))
+            n_steps = 1
+            start = random.randint(0, 23)
+            if trainer.model:
+                rewards = statistics["rewards"]
+                observations = statistics["observations"]
+                actions = statistics["actions"]
+                rews_pred_mult = []
+                for rollout in range(5):
+                    observation = np.concatenate(observations[start], axis=0)
+                    rews_real = []
+                    rews_pred = []
+                    for step in range(n_steps):
+                        rews_real.append(rewards[start+step+1][0])
+                        obs_real_i = np.concatenate(observations[start+step+1]).tolist()
+                        action = actions[start + step]
+                        observation, rew_predict = trainer.model.step_single(observation, action)
+                        for n,obs_real_i_i in enumerate(obs_real_i):
+                            obs_real[1][n].append(obs_real_i_i)
+                            obs_mod[1][n].append(observation[n])
+                        rews_pred.append(rew_predict[0])
+                    rews_pred_mult.append(rews_pred)
+            rews_real_cum = np.cumsum(rews_real)
+            rews_pred_cum_mult = [np.cumsum(rews) for rews in rews_pred_mult]
+            for item in rews_pred_cum_mult:
+                for key in rollout_mod.keys():
+                    rollout_mod[key].append(item[key-1])
+                    rollout_real[key].append(rews_real_cum[key-1])
+        # Calculate stuff
+        for key in rollout_mod.keys():
+            pred = np.array(rollout_mod[key])
+            target = np.array(rollout_real[key])
+            error = (pred-target)
+            RMSE = np.sqrt(np.mean(error**2))
+            print("RMSE-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE))
+            print("Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(target)))
+            print("Mean Model-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(pred)))
+            print("Overshoot-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str((np.mean(pred)-np.mean(target))/(np.mean(target))*100) + "%")
+
+            print("RMSE/Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE/np.mean(target)*100) + "%")
+        errors.append(RMSE/np.mean(target))
+
+        for i, _ in enumerate(observation):
+            pred = np.array(obs_mod[1][i])
+            target = np.array(obs_real[1][i])
+            error = pred-target
+            RMSE = np.sqrt(np.mean(error**2))
+            errors_observations[i].append(RMSE/np.mean(np.abs(target)))
+    plt.scatter(episodes, errors)
+
+    for i, errors_observation in enumerate(errors_observations):
+        plt.scatter(episodes, errors_observation, label=str(i), c="k")
+    plt.xlabel("Episodes trained")
+    plt.ylabel("Model error (Prediction RMSE / Mean Absolute Target Value)")
+    plt.ylim(0.,2.0)
+    plt.grid()
+    plt.show()
+
+
+
+def plot_model_statistics_corr(data, its, run=0, env_name=None):
+    plt.figure(figsize=(5,4))
+    plt.grid()
+
+    errors = []
+    errors_observations = None
+    episodes = []
+    for it in its:
+        trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
+        rollout_mod = {1: []}
+        rollout_real = {1: []}
+        observation = np.concatenate(env.reset())
+        print(len(observation))
+        if errors_observations is None:
+            errors_observations = [[] for obs in observation]
+        obs_real ={1: [[] for obs in observation]}
+        obs_mod = {1: [[] for obs in observation]}
+        episodes.append(int(ep))
+        for ep in range(100):
+            score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
+            print("Score: " + str(score))
+            n_steps = 1
+            start = random.randint(0, 23)
+            if trainer.model:
+                rewards = statistics["rewards"]
+                observations = statistics["observations"]
+                actions = statistics["actions"]
+                rews_pred_mult = []
+                for rollout in range(5):
+                    observation = np.concatenate(observations[start], axis=0)
+                    rews_real = []
+                    rews_pred = []
+                    for step in range(n_steps):
+                        rews_real.append(rewards[start+step+1][0])
+                        obs_real_i = np.concatenate(observations[start+step+1]).tolist()
+                        action = actions[start + step]
+                        observation, rew_predict = trainer.model.step_single(observation, action)
+                        for n,obs_real_i_i in enumerate(obs_real_i):
+                            obs_real[1][n].append(obs_real_i_i)
+                            obs_mod[1][n].append(observation[n])
+                        rews_pred.append(rew_predict[0])
+                    rews_pred_mult.append(rews_pred)
+            rews_real_cum = np.cumsum(rews_real)
+            rews_pred_cum_mult = [np.cumsum(rews) for rews in rews_pred_mult]
+            for item in rews_pred_cum_mult:
+                for key in rollout_mod.keys():
+                    rollout_mod[key].append(item[key-1])
+                    rollout_real[key].append(rews_real_cum[key-1])
+        # Calculate stuff
+        for key in rollout_mod.keys():
+            pred = np.array(rollout_mod[key])
+            target = np.array(rollout_real[key])
+            error = (pred-target)
+            RMSE = np.sqrt(np.mean(error**2))
+            print("RMSE-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE))
+            print("Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(target)))
+            print("Mean Model-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(pred)))
+            print("Overshoot-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str((np.mean(pred)-np.mean(target))/(np.mean(target))*100) + "%")
+
+            print("RMSE/Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE/np.mean(target)*100) + "%")
+        errors.append(pearsonr(pred, target)[0])
+
+        for i, _ in enumerate(observation):
+            pred = np.array(obs_mod[1][i])
+            target = np.array(obs_real[1][i])
+            error = pred-target
+            RMSE = np.sqrt(np.mean(error**2))
+            errors_observations[i].append(pearsonr(pred, target)[0])
+    plt.scatter(episodes, errors, label="Reward", c="k")
+
+    for i, errors_observation in enumerate(errors_observations):
+        if i==0:
+            plt.scatter(episodes, errors_observation, marker="x", label="Observations", c="k")
+        else:
+            plt.scatter(episodes, errors_observation, marker="x", c="k")
+
+    plt.xlabel("Episodes trained")
+    plt.ylabel("Correlation")
+    plt.ylim(0.5,1.0)
+    plt.legend()
+    plt.show()
 
 def analyze_model_obs_statistics_naive(data, it, runs=[0,1,2]):
     corrs_tot = []
@@ -377,22 +539,23 @@ def analyze_mean_model_obs_corr(data, its, run=0):
     plt.title("Correlations of observations")
     plt.show()
 
-def setup_agent_env(data, it, run, actor_it=None):
-    env = EnvWrapper("particle", "simple_spread")
+def setup_agent_env(data, it, run, actor_it=None, env_name="simple_spread"):
+    env = EnvWrapper("particle", env_name)
     if not actor_it:
         actor_it = it
     trainer = MASAC(env.n_agents, env.observation_space, env.action_space,
                     use_model=True, hidden_dims_actor=(128,128),
                     hidden_dims_model=(200,200,200,200))
     agents = trainer.agents
-    # trainer.model.load_state_dict(data[name_run]["runs"][0]["networks_model"][10][3])
+    ep = data[name_run]["runs"][run]["networks_agents"][actor_it][0]
+    trainer.model.load_state_dict(data[name_run]["runs"][run]["networks_model"][it][3])
     for agent_n, agent in enumerate(agents):
         agent.actor.load_state_dict(data[name_run]["runs"][run]["networks_agents"][actor_it][3][agent_n]["actor"])
         for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks_agents"][it][3][agent_n]["critics"]):
             critic.load_state_dict(state_dict)
     #     if type(agent.model) == EnsembleModel and data[name_run]["runs"][run]["networks"][it][3][0]["model"] is not None:
     #         agent.model.load_state_dict(data[name_run]["runs"][run]["networks"][it][3][0]["model"])
-    return trainer, agents, env
+    return trainer, agents, env, str(ep)
 
 def setup_agent_env2(run, it, actor_it=None):
     env = EnvWrapper("gym", "HalfCheetah-v2")
@@ -460,7 +623,7 @@ def plot_all_run(data, var="score", plot_janner=True, baseline=None, baseline_na
 
 def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseline_name=None,
                       use_moving_average=False,
-                      var_name="Score"):
+                      var_name="Score", names=None, steps_max=5000, ylim=(0.,250.)):
     if plot_janner:
         tasks = ["cheetah"]
         algorithms = ['mbpo']
@@ -484,17 +647,21 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
                 plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
                                  data_temp['y'] + data_temp['std'], color=colors[alg],
                                  alpha=0.25)
-    steps_max = 5000
+    steps_max = steps_max
     plt.figure(figsize=(5,4))
-    for log in logs:
+    for i_log, log in enumerate(logs):
+        if names:
+            name = names[i_log]
+        else:
+            name = log
         data = torch.load("../logs/" + log + ".p", map_location="cpu")
         for key in data.keys():
-                plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
+                plot_name_ep(data, key, steps_max, var, name=name, use_moving_average=use_moving_average)
     # plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
     plt.xlim(1., steps_max)
     plt.xlabel("Episode")
     #plt.ylim(-200,-120)
-    plt.ylim(0.,250.)
+    plt.ylim(*ylim)
     plt.ylabel(var_name)
     plt.legend()
     plt.grid()
@@ -521,6 +688,8 @@ def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False)
         values[-1] = np.array(values[-1])
     if use_moving_average:
         values = moving_average_2d(np.array(values))
+    else:
+        values= np.array(values)
     mean_scores = np.mean(values, axis=0)
     std_scores = np.std(values, axis=0)/np.sqrt(values.shape[0])
     # if use_moving_average:
@@ -815,7 +984,42 @@ def count_rew_greater_0(logs):
 
         # plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
 
-# analyze_model(data, 0, run=0)
+#First plot nav results
+logs_nav = ["cheetah_verify4"]
+plot_all_run_logs(logs_nav, var="score", plot_janner=True, var_name="Return",
+                  names=None,
+                  steps_max=50,
+                  ylim=(0, 6000))
+
+logs_nav = ["nav_mambpo_5step_5run_lr", "nav_masac_5run"] #, "nav_masac_1_auto_2", "nav_mambpo_cheetah2"]
+names = ["MAMBPO", "MASAC"]
+plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Reward",
+                  names=None,
+                  steps_max=5000,
+                  ylim=(-180,-120))
+plt.savefig("../figures/nav_results.png")
+
+#Plot tag results
+logs_nav = ["tag_mambpo_5step_5run_lr", "tag_mambpo_5step_5run", "tag_mambpo_5step_5run_lr2", "tag_mambpo_5step_5run_4","tag_masac_model", "tag_masac_1_auto_2"]
+logs_nav = ["tag_mambpo_5step_5run_lr", "tag_masac_5run"]#, "tag_masac_1_auto_2"]
+
+names = ["MAMBPO", "MASAC"]
+plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Reward",
+                  names=None,
+                  steps_max=10000,
+                  ylim=(0, 250))
+plt.savefig("../figures/tag_results.png")
+
+
+
+name = "tag_mambpo_5step_5run_lr"
+#cheetah_plotmodel_4layers_regulated_2
+name_run = "SAC4"
+env_name="simple_tag_coop"
+data = torch.load("../logs/" + name + ".p", map_location="cpu")
+analyze_model(data, 0, run=0, env_name=env_name)
+analyze_model_statistics(data, 20, run=0, env_name=env_name)
+plot_model_statistics_corr(data, [i*4 for i in range(11)], run=0, env_name=env_name)
 
 # logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
 # logs = [ "4_agent", "4_agent_lowlr"]
@@ -831,7 +1035,7 @@ def count_rew_greater_0(logs):
 # plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
 #
 
-play_game(data, 20, 0)
+#play_game(data, 40, 0)
 # logs = ["navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_model_improved_20_nonorm_lowlr", "navigation_model_cheetah"]
 logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_simple",
         # "navigation_model_cheetah_correct", , "navigation_model_cheetah",
@@ -845,11 +1049,11 @@ logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_
 logs = ["tag_masac_model", "tag_masac", "tag_masac_model_10", "tag_masac_1_auto_2"]
 # count_rew_greater_0(logs)
 
-plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
+#plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward", steps_max=10000)
 logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved", "nav_masac_model", "nav_masac_model_5", "nav_masac_model_5_500","nav_masac"]
 #plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
 logs = [ "nav_masac_model_5_500", "nav_masac_model_5_1000", "nav_masac_5_500", "nav_masac_model_10_1000", "nav_masac"]
 logs = ["nav_masac_model_5_500", "nav_masac_5_500", "nav_masac", "nav_masac_model_10_500", "nav_masac_1_noauto_0.05", "nav_masac_1_noauto_0.1", "nav_masac_1_noauto_0.02", "nav_masac_model_10_500_noauto", "nav_masac_1_auto_2"]
 logs = ["nav_masac_model_5_500", "nav_masac", "nav_masac_1_auto_2", "nav_masac_1_noauto_0.02"]
 
-plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
+#plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward", steps_max=10000)
