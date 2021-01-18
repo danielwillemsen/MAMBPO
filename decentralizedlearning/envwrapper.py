@@ -1,24 +1,9 @@
 """Contains a wrapper for openAI gym, multi-agent particles and other custom environments to provide constant interface for RL algorithms"""
 import sys
 import os
-sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
-sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/environments'))
-
 import gym
-from multiagent.environment import MultiAgentEnv
-import multiagent.scenarios as scenarios
-from waypoints import WaypointsEnv
-from circle import CircleEnv
-from make_env import make_env
+from decentralizedlearning.submodules.multiagent_particle_envs.make_env import make_env
 from gym.spaces import Box
-# from decentralizedlearning.submodules.schroeder.make_env import make_env as make_env_schroeder
-
-try:
-    from crossing import CrossingEnv
-    from continuouscrossing import ContinuousCrossingEnv
-except:
-    print("Importing failed")
-
 import numpy as np
 from gym import wrappers
 

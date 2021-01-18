@@ -1,15 +1,11 @@
 import torch
 import copy
 import numpy as np
-import time
 
 from decentralizedlearning.algs.utils import EfficientReplayBuffer as ReplayBuffer
-from decentralizedlearning.algs.utils import MultiStepReplayBuffer
-from decentralizedlearning.algs.utils import StateBuffer
 
 from decentralizedlearning.algs.utils import Critic
 from decentralizedlearning.algs.utils import StochActor
-from decentralizedlearning.algs.utils import OUNoise
 from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
 from decentralizedlearning.algs.utils import convert_multi_inputs_to_tensors
@@ -64,7 +60,10 @@ class SACHyperPar:
         self.use_centralized_critic = bool(kwargs.get("use_centralized_critic", True))
         self.use_shared_replay_buffer = bool(kwargs.get("use_shared_replay_buffer", False))
 
-class MASACAgent:
+class MAMBPOAgent:
+    """ MAMBPO Agent that stores the critics and actor for a single agent. Is created by the MAMBPO trainer.
+
+    """
     def __init__(self, action_dim, device, par,
                  actor, actor_target, actor_optimizer,
                  critics, critics_target, critics_optimzer):
@@ -106,7 +105,10 @@ class MASACAgent:
 
 
 
-class MASAC:
+class MAMBPO:
+    """Main MAMBPO trainer class. Stores all agents and performs learning.
+
+    """
     def __init__(self, n_agents, observation_space, action_space, hyperpar=None, discrete=False, **kwargs):
         # Initialize arguments
         self.discrete = discrete
@@ -154,22 +156,8 @@ class MASAC:
             self.model = None
 
         self.real_buffer = ReplayBuffer(size=100000, batch_size=self.par.batch_size, device=self.device)
-        if not self.par.use_degraded_sim:
-            self.model_sample_buffer = self.real_buffer
-        else:
-            env_copy = kwargs.get("env_copy", None)
-            self.model = DegradedSim(env_copy, degradation=0.0, bias=0.4, device=self.device)
-            self.model_sample_buffer = StateBuffer(device=self.device)
-
-        # Initialize noise
-        if self.par.use_OU:
-            self.ou = OUNoise(action_dim)
-
-        if self.par.use_multistep_reg:
-            self.multistep_buffer = MultiStepReplayBuffer(size=100000, batch_size=self.par.batch_size,
-                                                          device=self.device, length=5)
-        else:
-            self.multistep_buffer = None
+        self.model_sample_buffer = self.real_buffer
+        self.multistep_buffer = None
 
         if self.par.monitor_losses:
             self.val_buffer = ReplayBuffer(batch_size=500, device=self.device)
@@ -188,7 +176,11 @@ class MASAC:
         self.step_i = 0
 
     def initialize_agents(self, n_agents):
-        """ Creates the agents with associated critics and actors"""
+        """ Creates the agents with associated critics and actors
+
+        :param n_agents: amount of agents to create
+        :return:
+        """
         agents = []
         critic_input_size = np.sum(self.obs_dims)+np.sum(self.action_dims) if self.par.use_centralized_critic \
             else self.obs_dims[0] + self.action_dims[0]
@@ -230,9 +222,9 @@ class MASAC:
                     critics_optimizers.append(torch.optim.Adam(critic.parameters(),
                                                                lr=self.par.lr_critic,
                                                                weight_decay=self.par.weight_decay))
-            agents.append(MASACAgent(self.action_dims[i_agent], self.device, self.par,
-                                     actor, actor_target, actor_optimizer,
-                                     critics, critics_target, critics_optimizers))
+            agents.append(MAMBPOAgent(self.action_dims[i_agent], self.device, self.par,
+                                      actor, actor_target, actor_optimizer,
+                                      critics, critics_target, critics_optimizers))
         return agents
 
     def reset(self):
@@ -247,32 +239,38 @@ class MASAC:
             self.ou.reset()
 
     def step(self, o, r, a, eval=False, done=False, generate_val_data=False, greedy_eval=True, s=None):
+        """ The main MAMBPO trainer step taken after action selection by all agents.
+        Stores transitions in buffer and trains model, actors and critics.
+
+        :param o: joint observation
+        :param r: reward
+        :param a: next joint action
+        :param eval: whether or not this is an evaluation episode (if True, no training happens and transition is not stored)
+        :param done: whether or not this is the final time step in episode
+        :param generate_val_data: to be removed
+        :param greedy_eval: to be removed
+        :param s: state (only used in some verification experiments)
+        :return:
+        """
         o, r, done, a = convert_multi_inputs_to_tensors(o, r, done, a, self.device)
         for agent in self.agents:
             agent.step_i += 1
-        # Do training process step
-        # self.traj_o.append(o)
-        # self.traj_done.append(done)
-        # self.traj_r.append(r)
 
         if self.o_old is not None:
             self.real_buffer.add((self.o_old, self.a_old, r, o, done))
-        if self.par.use_degraded_sim and self.s_old is not None:
-            self.model_sample_buffer.add((self.o_old, self.a_old, r, o, done), self.s_old)
 
-        if self.par.use_multistep_reg:
-            if len(self.traj_o)>self.multistep_buffer.length:
-                self.multistep_buffer.add_mini_traj(self.traj_o[-6:], self.traj_a[-5:], self.traj_r[-5:], self.traj_done[-5:])
+        # Train model:
         if self.step_i % self.par.update_model_every_n_steps == 0:
-            #Update model and generate new samples:
             if self.par.use_model and self.real_buffer.len() > self.par.batch_size:
                 self.model.train_models(self.optimizer_model, self.real_buffer, multistep_buffer=self.multistep_buffer)
 
+        # Train actors and critic
         if self.step_i % self.par.update_every_n_steps == 0 and self.step_i > 25*100:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    batch_this_epoch = 2000*self.par.n_steps#self.par.batch_size*self.par.n_steps*self.par.update_every_n_steps*8
+                    # Generate date for model buffer
+                    batch_this_epoch = 2000*self.par.n_steps
                     fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch),
                                                                  [agent.actor for agent in self.agents],
                                                                  diverse=self.par.diverse,
@@ -282,7 +280,7 @@ class MASAC:
                     self.fake_buffer.reallocate(size=batch_this_epoch*self.par.rollout_length)
                     for item in fake_samples:
                         self.fake_buffer.add_multiple(item)
-                for step in range(self.par.n_steps):#*self.par.update_every_n_steps):
+                for step in range(self.par.n_steps):
                     # Train actor and critic
                     n_real = int(self.par.batch_size * self.par.real_ratio)
                     b_fake = self.ac_buffer.sample_tensors(n=self.par.batch_size-n_real)
@@ -317,12 +315,21 @@ class MASAC:
 
 
     def update_rollout_length(self):
+        """ (unused in paper) updates the rollout length if variable rollout length is used.
+
+        :return:
+        """
         if self.par.use_rollout_schedule:
             normdist = (self.step_i - self.par.rollout_schedule_time[0])/(self.par.rollout_schedule_time[1]-self.par.rollout_schedule_time[0])
             y = self.par.rollout_schedule_val[0]*(1-normdist) + self.par.rollout_schedule_val[1]*normdist
             self.par.rollout_length = int(max(min(y, self.par.rollout_schedule_val[1]), self.par.rollout_schedule_val[0]))
 
     def update_actor(self, b):
+        """ Takes an MAMBPO gradient step for the actors.
+
+        :param b: batch to use in gradient step
+        :return:
+        """
         if self.par.use_common_critic:
             for critic in self.agents[0].critics:
                 for par in critic.parameters():
@@ -378,6 +385,11 @@ class MASAC:
         return batch[name][:]
 
     def update_critics(self, b):
+        """ Takes an MAMBPO gradient step for the critics.
+
+        :param b: batch to use in gradient step
+        :return:
+        """
         if self.par.use_common_critic:
             with torch.no_grad():
                 next_a_n = []

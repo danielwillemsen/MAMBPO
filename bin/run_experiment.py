@@ -1,7 +1,7 @@
 import time
 import os, sys
 
-sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multi-agent-particle-envs'))
+sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multiagent_particle_envs'))
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
 sys.path.insert(1, os.path.join(sys.path[0], '../'))
 
@@ -12,7 +12,7 @@ from decentralizedlearning.algs.configs.config import get_hyperpar
 from decentralizedlearning.data_log import DataLog
 
 import logging
-from decentralizedlearning.algs.masac import MASAC
+from decentralizedlearning.algs.mambpo import MAMBPO
 from gym import spaces
 
 def scale_action(env, agent_id, action):
@@ -181,7 +181,7 @@ if __name__ == '__main__':
     """Main script to run experiments"""
     name = "simple_tag_coop"     # Environment name, select from: "HalfCheetah-v2", "simple_tag_coop", "simple_spread"
     n_runs = 5                 # Amount of runs to do
-    logpath = "../logs/"         # Logging directory
+    logpath = "./logs/"         # Logging directory
     logname = "mambpo_test"  # Name of log file
     config_name = "default_mambpo"
     n_steps = 25*5001
@@ -208,5 +208,5 @@ if __name__ == '__main__':
             algname = "SAC"
             par = get_hyperpar(config_name)
             record_env = EnvWrapper(suite, name, n_agents=n_agent, randomized=True)
-            single_run(env, MASAC, data_log, run, agent_kwargs={"hyperpar": par}, n_steps=n_steps,
+            single_run(env, MAMBPO, data_log, run, agent_kwargs={"hyperpar": par}, n_steps=n_steps,
                        record_env=record_env, name=name+config_name+logname)

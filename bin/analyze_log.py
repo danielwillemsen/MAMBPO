@@ -7,7 +7,7 @@ from decentralizedlearning.run_utils import run_episode
 from decentralizedlearning.algs.configs import config
 from decentralizedlearning.algs.models import DegradedSim
 from decentralizedlearning.algs.models import EnsembleModel
-from decentralizedlearning.algs.masac import MASAC, MASACAgent
+from decentralizedlearning.algs.mambpo import MAMBPO, MAMBPOAgent
 import torch
 import random
 from scipy.stats import pearsonr
@@ -711,9 +711,9 @@ def setup_agent_env(data, it, run, actor_it=None, env_name="simple_spread", benc
     env = EnvWrapper("particle", env_name, benchmark=benchmark)
     if not actor_it:
         actor_it = it
-    trainer = MASAC(env.n_agents, env.observation_space, env.action_space,
-                    use_model=True, hidden_dims_actor=(128,128),
-                    hidden_dims_model=(200,200,200,200))
+    trainer = MAMBPO(env.n_agents, env.observation_space, env.action_space,
+                     use_model=True, hidden_dims_actor=(128,128),
+                     hidden_dims_model=(200,200,200,200))
     agents = trainer.agents
     name_run = [k for k in data.keys()][0]
     ep = data[name_run]["runs"][run]["networks_agents"][actor_it][0]
@@ -829,7 +829,7 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
         data = torch.load("../logs/" + log + ".p", map_location="cpu")
         for key in data.keys():
                 plot_name_ep(data, key, steps_max, var, name=name, use_moving_average=use_moving_average, n_runs=n_runs)
-    # plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
+    # plot_data_csv("../logs/MAMBPO.csv", steps_max, "MAMBPO (Data by Gupta et al.)")
     plt.xlim(1., steps_max)
     plt.xlabel("Episodes trained")
     #plt.ylim(-200,-120)
@@ -1171,7 +1171,7 @@ def count_rew_greater_0(data, its, n_runs=5, env_name=None):
 
 # First plot nav results
 # logs_nav = ["nav_mambpo_10step", "nav_masac_5run", "nav_masac_10step"] #, "nav_masac_1_auto_2", "nav_mambpo_cheetah2"]
-# names = ["MAMBPO (10 steps)", "MASAC (1 step)", "MASAC (10 steps)"]
+# names = ["MAMBPO (10 steps)", "MAMBPO (1 step)", "MAMBPO (10 steps)"]
 # plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Cumulative reward per episode",
 #                   names=names,
 #                   steps_max=5000,
@@ -1181,7 +1181,7 @@ def count_rew_greater_0(data, its, n_runs=5, env_name=None):
 #Plot tag results
 logs_nav = ["tag_masac_5run"]#, "tag_masac_1_auto_2"]
 
-#names = ["MAMBPO", "MASAC"]
+#names = ["MAMBPO", "MAMBPO"]
 plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Cumulative reward per episode",
                   names=None,
                   steps_max=10000,
