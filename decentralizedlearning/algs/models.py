@@ -2,72 +2,9 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-import copy
 import random
 import logging
-import itertools
 from decentralizedlearning.algs.utils import scale_action
-
-class DegradedSim:
-    def __init__(self, env, degradation=0.0, bias=0.0, device=None):
-        self.degradation = degradation
-        self.bias = bias
-        self.env = env
-        if not device:
-            self.device = torch.device("cpu")
-        else:
-            self.device = device
-
-    def train_models(self, *args, **kwargs):
-        pass
-
-    def log_loss(self, *args, **kwargs):
-        pass
-
-    def degrade(self, action):
-        action_degraded = action*(1-self.bias) + np.random.normal(size=action.shape)*self.degradation
-        return action_degraded
-
-    def generate_efficient(self, samples, actor, diverse=True, batch_size=256):
-        # print("Generating")
-        o = samples["o"]
-        a = actor(o, greedy=False)
-        a_det = a.detach().cpu().numpy()
-        r = samples["r"]
-        ret_samples = []
-        new_o_ret = []
-
-        for i, state in enumerate(samples["s"]):
-            self.env.set_state(state)
-            a_i = a_det[i]
-            a_deg = self.degrade(a_i)
-            a_deg = scale_action(self.env, 0, a_deg)
-            obs_n, reward_n, done_n, _ = self.env.step([a_deg])
-            new_o_ret.append(obs_n[0])
-            r[i] = reward_n[0]
-
-        new_o_ret = torch.from_numpy(np.array(new_o_ret)).to(self.device)
-        ret_samples.append((o, a.detach(), r, new_o_ret, samples["done"]))
-        # print("Generating done")
-        return ret_samples
-
-    def step_single(self, observation, action, state=None):
-        if state is None:
-            raise Exception
-        a_deg = self.degrade(action)
-        a_deg = scale_action(self.env, 0, a_deg)
-        self.env.set_state(state)
-        obs_n, reward_n, done_n, _ = self.env.step([a_deg])
-        return obs_n[0], [reward_n[0]]
-
-    def state_dict(self):
-        return None
-
-
-    # self.model.generate_efficient(self.real_buffer.sample_tensors(n=batch_this_epoch), self.actor,
-    #                               diverse=self.par.diverse,
-    #                               batch_size=batch_this_epoch)  # self.par.batch_size)
-
 
 class EnsembleModel(nn.Module):
     def __init__(self, input_dim, hidden_dims, obs_dim, n_models, monitor_losses=False, use_stochastic=True, name="cheetah", device=None):
@@ -77,7 +14,7 @@ class EnsembleModel(nn.Module):
         self.use_stochastic = use_stochastic
         self.name = name
         self.n_models = n_models
-        self.n_elites = 5
+        self.n_elites = 10
         if monitor_losses:
             self.logger = logging.getLogger('root')
         self.models = nn.ModuleList([Model(input_dim, hidden_dims, obs_dim, use_stochastic=use_stochastic) for i in range(n_models)])
@@ -111,41 +48,6 @@ class EnsembleModel(nn.Module):
         r_pred = [torch.stack(item) for item in zip(*r_pred)]
         return o_next_pred, r_pred
 
-    def multistep_update_step(self, optim, samples, length):
-        o = samples["o"][:,0,:]
-        loss = 0.
-        for i in range(length):
-            o_next_pred, r_pred = self(o, samples["a"][:,i,:])
-            target_o = samples["o_next"][:,i]
-            target_r = samples["r"][:,i].unsqueeze(-1)
-
-            log_var_o = o_next_pred[1]
-            log_var_r = r_pred[1]
-            inv_var_o = torch.exp(-log_var_o)
-            inv_var_r = torch.exp(-log_var_r)
-            mu_o = o_next_pred[0]
-            mu_r = r_pred[0]
-
-            if True:
-                l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
-                l2 = torch.sum(torch.mean(torch.cat((log_var_o, log_var_r), dim=-1),dim=(-1,-2)))
-                #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
-                #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
-                #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
-            else:
-                loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
-                loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
-                loss3 = 0.
-            loss += (l1+l2)*0.1
-            randomlist = random.choices(range(0, self.n_models), k=256)
-            idx = [i for i in range(256)]
-            new_o = torch.normal(mu_o, torch.exp(0.5 * log_var_o))
-            o = new_o[randomlist, idx, :]
-
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
-
     def update_step(self, optim, samples):
         o_next_pred, r_pred = self(samples["o"], samples["a"])
         target_o = samples["o_next"]
@@ -170,9 +72,6 @@ class EnsembleModel(nn.Module):
         if self.use_stochastic:
             l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * inv_var_o * (mu_o - target_o)),1*((mu_r - target_r) * inv_var_r * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
             l2 = torch.sum(torch.mean(torch.cat((log_var_o, 1*log_var_r), dim=-1),dim=(-1,-2)))
-            #loss1 = torch.sum(torch.mean((mu_o - target_o) * inv_var_o * (mu_o - target_o),dim=(-1,-2)))
-            #loss2 = torch.sum(torch.mean(,dim=(-1,-2)))
-            #loss3 = torch.mean(log_var_o) + torch.mean(log_var_r)
         else:
             l1 = torch.sum(torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),1*((mu_r - target_r) * (mu_r - target_r))), dim=-1),dim=(-1,-2)))
             l2 = 0.#torch.sum(torch.mean(torch.cat((log_var_o, 1*log_var_r), dim=-1),dim=(-1,-2)))
@@ -201,18 +100,10 @@ class EnsembleModel(nn.Module):
             vx = target_r - torch.mean(target_r)
             vy = mu_r[0] - torch.mean(mu_r[0])
             print("R corr", torch.sum(vx * vy) / (torch.sqrt(torch.sum(vx ** 2)) * torch.sqrt(torch.sum(vy ** 2))))
+            l1 = torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),
+                                                 ((mu_r - target_r) * (mu_r - target_r))), dim=-1),
+                                      dim=(-1, -2))
 
-            if self.use_stochastic or True:
-                l1 = torch.mean(torch.cat((((mu_o - target_o) * (mu_o - target_o)),
-                                                     ((mu_r - target_r) * (mu_r - target_r))), dim=-1),
-                                          dim=(-1, -2))
-                #l1 = torch.mean(l1)
-                loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
-                loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
-            else:
-                loss1 = torch.mean((mu_o - target_o) * (mu_o - target_o))
-                loss2 = torch.mean((mu_r - target_r) * (mu_r - target_r))
-        #return loss1, loss2
         return l1
 
     def step_single(self, observation, action, **kwargs):
@@ -339,8 +230,6 @@ class EnsembleModel(nn.Module):
                     ret_samples.append((o[i], a[i], r[randomlist[i],i][0], new_o[randomlist[i],i], samples["done"][i]))
                 else:
                     ret_samples.append((o[i], a[i], mu_r[randomlist[i],i][0], mu_o[randomlist[i],i], samples["done"][i]))
-                # ret_samples.append((samples["o"][i], samples["a"][i], samples["r"][i], samples["o_next"][i], samples["done"][i]))
-
         return ret_samples
 
     def generate_efficient(self, samples, actor, diverse=True, batch_size=128, rollout_length=1, obs_i_per_agent=None, act_i_per_agent=None):
@@ -385,11 +274,6 @@ class EnsembleModel(nn.Module):
                 #done = self.termination_fn(new_o_ret, a)
                 ret_samples.append((o, a, r[randomlist, idx, :].squeeze(-1), new_o_ret, done))
             return ret_samples
-            # for i in range(batch_size):
-            #     if self.use_stochastic:
-            #         ret_samples.append((o[i], a[i], r[randomlist[i],i][0], new_o[randomlist[i],i], samples["done"][i]))
-            #     else:
-            #         ret_samples.append((o[i], a[i], mu_r[randomlist[i],i][0], mu_o[randomlist[i],i], samples["done"][i]))
 
 class Model(nn.Module):
     """Model.
