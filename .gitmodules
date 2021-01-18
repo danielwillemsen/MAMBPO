@@ -1,13 +1,4 @@
 [submodule "decentralizedlearning/submodules/multi-agent-particle-envs"]
 	path = decentralizedlearning/submodules/multi-agent-particle-envs
-	url = https://github.com/danielwillemsen/multiagent-particle-envs.git
+	url = https://github.com/schroederdewitt/multiagent-particle-envs.git
 	branch = master
-[submodule "decentralizedlearning/submodules/multiagent_mujoco"]
-	path = decentralizedlearning/submodules/multiagent_mujoco
-	url = https://github.com/schroederdewitt/multiagent_mujoco
-[submodule "decentralizedlearning/submodules/schroeder"]
-	path = decentralizedlearning/submodules/schroeder
-	url = https://github.com/schroederdewitt/multiagent-particle-envs
-[submodule "decentralizedlearning/submodules/multiagent-particle-envs"]
-	path = decentralizedlearning/submodules/multiagent-particle-envs
-	url = https://github.com/schroederdewitt/multiagent-particle-envs
