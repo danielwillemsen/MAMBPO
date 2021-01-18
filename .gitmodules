@@ -3,5 +3,5 @@
 	url = https://github.com/schroederdewitt/multiagent-particle-envs.git
 	branch = master
 [submodule "decentralizedlearning/submodules/multiagent-particle-envs"]
-	path = decentralizedlearning/submodules/multiagent-particle-envs
+	path = decentralizedlearning/submodules/multiagent_particle_envs
 	url = https://github.com/schroederdewitt/multiagent-particle-envs
