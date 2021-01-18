@@ -18,13 +18,14 @@ def scale_action(env, agent_id, action):
         return action
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None, benchmark=False):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
     done_n = [False for i in range(len(agents))]
     rewards_target = [0.0 for i in range(len(agents))]
     rewards_collision = [0.0 for i in range(len(agents))]
+    info_n_list = []
     if store_data:
         observations = []
         rewards = []
@@ -53,6 +54,7 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
             trainer.step(obs_n, reward_n, action_list, done=done_n)
         # step environment
         obs_n, reward_n, done_n, info_n = env.step(act_n)
+        info_n_list.append(info_n)
         rewards_target = [0.0 for i in range(len(agents))]
         rewards_collision = [0.0 for i in range(len(agents))]
         # for j, tup in enumerate(info_n["n"]):
@@ -81,6 +83,8 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
         agent.reset()
     if trainer is not None:
         trainer.reset()
+    if benchmark:
+        return reward_tot, i+1, info_n_list
     if not store_data:
         return reward_tot, i + 1
     else:

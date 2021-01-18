@@ -41,6 +41,7 @@ class EnvWrapper:
         """
         # Check if suite name is correct and can be handled
         supported_suites = ["gym", "particle", "custom", "gym-record", "multiagent_mujoco", "schroeder"]
+        benchmark = bool(kwargs.get("benchmark", False))
         assert suite in supported_suites, "Suite should be in {} but was {}".format(str(supported_suites), suite)
         self.suite = suite
         self.wrapped_env = None
@@ -85,7 +86,7 @@ class EnvWrapper:
 
         elif suite=="particle" or suite=="schroeder":
             if suite=="particle":
-                self.env = make_env(env_name, benchmark=False)
+                self.env = make_env(env_name, benchmark=benchmark)
             else:
                 self.env = make_env_schroeder(env_name, benchmark=False)
             # self.scenario = scenarios.load(env_name).Scenario()

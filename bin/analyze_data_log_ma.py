@@ -12,6 +12,10 @@ import torch
 import random
 from scipy.stats import pearsonr
 import pyglet
+import pickle as p
+
+# plt.rcParams.update({'font.size': 18})
+plt.style.use('seaborn-paper')
 
 name = "tag_masac_1_auto_2"
 #cheetah_plotmodel_4layers_regulated_2
@@ -47,11 +51,13 @@ def find_nearest_mult(array, values):
     idx = (np.abs(np.expand_dims(array, 1) - np.expand_dims(values, 0))).argmin(axis=0)
     return idx
 
-def play_game(data, it, run=0):
-    trainer, agents, env, _ = setup_agent_env(data, it, run)
-
-    score, _, statistics = run_episode(env, agents, eval=True, render=True, greedy_eval=False, store_data=True)
-    pyglet.image.get_buffer_manager().get_color_buffer().save("test.png")
+def play_game(data, it, run=0, env_name=None, steps=25, name=None):
+    if not name:
+        name = env_name
+    trainer, agents, env, _ = setup_agent_env(data, it, run, env_name=env_name)
+    env.reset()
+    score, _, statistics = run_episode(env, agents, eval=True, render=True, greedy_eval=False, store_data=True, steps=steps)
+    pyglet.image.get_buffer_manager().get_color_buffer().save(name+"test.png")
     print(score)
 
 def analyze_model(data, it, run=0, env_name=None):
@@ -247,7 +253,7 @@ def plot_model_statistics_corr(data, its, run=0, env_name=None):
         obs_real ={1: [[] for obs in observation]}
         obs_mod = {1: [[] for obs in observation]}
         episodes.append(int(ep))
-        for ep in range(100):
+        for ep in range(250):
             score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
             print("Score: " + str(score))
             n_steps = 1
@@ -307,67 +313,293 @@ def plot_model_statistics_corr(data, its, run=0, env_name=None):
 
     plt.xlabel("Episodes trained")
     plt.ylabel("Correlation")
-    plt.ylim(0.5,1.0)
+    plt.ylim(0.0,1.0)
     plt.legend()
     plt.show()
 
-def analyze_model_obs_statistics_naive(data, it, runs=[0,1,2]):
-    corrs_tot = []
-    for run in runs:
-        n_steps = 101
-        agents, env = setup_agent_env(data, it, run)
 
-        rollout_mod = [[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
-        rollout_real =[[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
-        rollout_mod_naive = [[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
+def plot_model_statistics_r2(data, its, n_runs=5, env_name=None):
+    plt.figure(figsize=(5,4))
+    plt.grid()
 
-        # rollout_mod = {1: [], 10:[], 50:[],100:[]}
-        # rollout_real = {1: [], 10:[], 50:[],100:[]}
+    errors = []
+    errors_observations = None
+    episodes = []
+    for it in its:
+        trainer, agents, env, ep = setup_agent_env(data, it, 0, env_name=env_name)
+        rollout_mod = {1: []}
+        rollout_real = {1: []}
+        observation = np.concatenate(env.reset())
+        # print(len(observation))
+        if errors_observations is None:
+            errors_observations = [[] for obs in observation]
+        obs_real ={1: [[] for obs in observation]}
+        obs_mod = {1: [[] for obs in observation]}
+        episodes.append(int(ep))
+        for run in range(n_runs):
+            trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
+            for ep in range(5):
+                score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
+                # print("Score: " + str(score))
+                n_steps = 1
+                start = random.randint(0, 23)
+                if trainer.model:
+                    rewards = statistics["rewards"]
+                    observations = statistics["observations"]
+                    actions = statistics["actions"]
+                    rews_pred_mult = []
+                    for rollout in range(1):
+                        observation = np.concatenate(observations[start], axis=0)
+                        rews_real = []
+                        rews_pred = []
+                        for step in range(n_steps):
+                            rews_real.append(rewards[start+step+1][0])
+                            obs_real_i = np.concatenate(observations[start+step+1]).tolist()
+                            action = actions[start + step]
+                            observation, rew_predict = trainer.model.step_single(observation, action)
+                            for n,obs_real_i_i in enumerate(obs_real_i):
+                                obs_real[1][n].append(obs_real_i_i)
+                                obs_mod[1][n].append(observation[n])
+                            rews_pred.append(rew_predict[0])
+                        rews_pred_mult.append(rews_pred)
+                rews_real_cum = np.cumsum(rews_real)
+                rews_pred_cum_mult = [np.cumsum(rews) for rews in rews_pred_mult]
+                for item in rews_pred_cum_mult:
+                    for key in rollout_mod.keys():
+                        rollout_mod[key].append(item[key-1])
+                        rollout_real[key].append(rews_real_cum[key-1])
+        # Calculate stuff
+        for key in rollout_mod.keys():
+            pred = np.array(rollout_mod[key])
+            target = np.array(rollout_real[key])
+            error = (pred-target)
+            SS_tot = np.sum((target - np.mean(target))**2)
+            SS_res = np.sum(error**2)
+            # RMSE = np.sqrt(np.mean(error**2))
+            # print("RMSE-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE))
+            # print("Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(target)))
+            # print("Mean Model-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(pred)))
+            # print("Overshoot-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str((np.mean(pred)-np.mean(target))/(np.mean(target))*100) + "%")
+            #
+            # print("RMSE/Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE/np.mean(target)*100) + "%")
+        errors.append(1-SS_res/SS_tot)
 
-        for ep in range(10):
+        for i, _ in enumerate(observation):
+            pred = np.array(obs_mod[1][i])
+            target = np.array(obs_real[1][i])
+            error = pred - target
+            SS_tot = np.sum((target - np.mean(target))**2)
+            SS_res = np.sum(error**2)
+            errors_observations[i].append(1-SS_res/SS_tot)
+    plt.scatter(episodes, errors, label="Reward", c="k")
+
+    for i, errors_observation in enumerate(errors_observations):
+        if i==0:
+            plt.scatter(episodes, errors_observation, marker="x", label="Observations", c="k")
+        else:
+            plt.scatter(episodes, errors_observation, marker="x", c="k")
+
+    plt.xlabel("Episodes trained")
+    plt.ylabel(r"R$^2$")
+    plt.ylim(0.0,1.0)
+    plt.legend()
+    plt.show()
+
+
+def plot_model_statistics_r22(data, its, n_runs=5, env_name=None, pick=False, add_mean_line=False,ylim=None):
+    plt.figure(figsize=(4,3), dpi=300)
+    plt.grid()
+
+    if not pick:
+        errors = []
+        errors_observations = None
+        episodes = []
+        for it in its:
+            trainer, agents, env, ep = setup_agent_env(data, it, 0, env_name=env_name)
+            rollout_mod = {1: []}
+            rollout_real = {1: []}
+            observation = np.concatenate(env.reset())
+            # print(len(observation))
+            if errors_observations is None:
+                errors_observations = [[] for obs in observation]
+            obs_real ={1: [[] for obs in observation]}
+            obs_mod = {1: [[] for obs in observation]}
+            episodes.append(int(ep))
+            for run in range(n_runs):
+                trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
+                for ep in range(250):
+                    score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
+                    # print("Score: " + str(score))
+                    n_steps = 1
+                    start = random.randint(0, 23)
+                    if trainer.model:
+                        rewards = statistics["rewards"]
+                        observations = statistics["observations"]
+                        actions = statistics["actions"]
+                        rews_pred_mult = []
+                        for rollout in range(1):
+                            observation = np.concatenate(observations[start], axis=0)
+                            rews_real = []
+                            rews_pred = []
+                            for step in range(n_steps):
+                                rews_real.append(rewards[start+step+1][0])
+                                obs_real_i = np.concatenate(observations[start+step+1]).tolist()
+                                action = actions[start + step]
+                                observation, rew_predict = trainer.model.step_single(observation, action)
+                                for n,obs_real_i_i in enumerate(obs_real_i):
+                                    obs_real[1][n].append(obs_real_i_i)
+                                    obs_mod[1][n].append(observation[n])
+                                rews_pred.append(rew_predict[0])
+                            rews_pred_mult.append(rews_pred)
+                    rews_real_cum = np.cumsum(rews_real)
+                    rews_pred_cum_mult = [np.cumsum(rews) for rews in rews_pred_mult]
+                    for item in rews_pred_cum_mult:
+                        for key in rollout_mod.keys():
+                            rollout_mod[key].append(item[key-1])
+                            rollout_real[key].append(rews_real_cum[key-1])
+            # Calculate stuff
+            for key in rollout_mod.keys():
+                pred = np.array(rollout_mod[key])
+                target = np.array(rollout_real[key])
+                error = (pred-target)
+                SS_tot = np.sum((target - np.mean(target))**2)
+                SS_res = np.sum(error**2)
+                # RMSE = np.sqrt(np.mean(error**2))
+                # print("RMSE-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE))
+                # print("Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(target)))
+                # print("Mean Model-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(np.mean(pred)))
+                # print("Overshoot-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str((np.mean(pred)-np.mean(target))/(np.mean(target))*100) + "%")
+                #
+                # print("RMSE/Mean Target-" + "Ep." + str(it*10) + "Rollout." + str(key) + "---" + str(RMSE/np.mean(target)*100) + "%")
+            errors.append(1-SS_res/SS_tot)
+
+            for i, _ in enumerate(observation):
+                pred = np.array(obs_mod[1][i])
+                target = np.array(obs_real[1][i])
+                error = pred - target
+                SS_tot = np.sum((target - np.mean(target))**2)
+                SS_res = np.sum(error**2)
+                errors_observations[i].append(1-SS_res/SS_tot)
+        p.dump({"errors_observations":errors_observations, "errors":errors, "episodes":episodes}, open(env_name+"corr2.p", "wb"))
+    else:
+        dat = p.load(open(env_name+"corr2.p", "rb"))
+        errors = dat["errors"]
+        episodes = dat["episodes"]
+        errors_observations = dat["errors_observations"]
+    # Delete communication observations (unused)
+    del_idx = []
+    for idx, err in enumerate(errors_observations):
+        if not np.any(np.array(err)>-99.):
+            del_idx.append(idx)
+    errors_observations = [item for j, item in enumerate(errors_observations) if j not in del_idx]
+    if not add_mean_line:
+        for i, errors_observation in enumerate(errors_observations):
+            if i==0:
+                plt.plot(episodes, errors_observation, c='tab:orange', linewidth=0.25)
+            else:
+                plt.plot(episodes, errors_observation, c='tab:orange', linewidth=0.25)
+        plt.plot(episodes, errors, marker="o", label="Reward", c='tab:blue')
+        errors_observation_mean = [np.mean(nums) for nums in zip(*errors_observations)]
+
+        plt.plot(episodes, errors_observation_mean, marker="o", label="Observations", c='tab:orange')
+
+        plt.xlabel("Episodes trained")
+        plt.ylabel(r"R$^2$")
+        plt.ylim(0.0,1.0)
+        plt.xlim(0,5000)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("../figures/" + env_name +"_model" + ".png")
+    else:
+        fig, ax1 = plt.subplots(figsize=(4,2), dpi=300)
+
+        # for i, errors_observation in enumerate(errors_observations):
+        #     if i == 0:
+        #         ax1.plot(episodes, errors_observation, c='tab:orange', linewidth=0.25)
+        #     else:
+        #         ax1.plot(episodes, errors_observation, c='tab:orange', linewidth=0.25)
+        plt.plot(episodes, errors, marker="o", label="Reward ", c='tab:blue')
+        errors_observation_mean = [np.mean(nums) for nums in zip(*errors_observations)]
+
+        # plt.plot(episodes, errors_observation_mean, marker="o", label="Observations", c='tab:orange')
+
+        ax1.set_xlabel("Episodes trained")
+        ax1.set_ylabel(r"R$^2$ (Reward)")
+        ax1.set_ylim(0.0, 1.0)
+        ax1.set_xlim(0, 5000)
+        ax1.yaxis.label.set_color('tab:blue')
+        ax1.tick_params(axis='y', colors='tab:blue')
+        ax2 = ax1.twinx()
+        ax2.yaxis.label.set_color('tab:red')
+        ax2.tick_params(axis='y', colors='tab:red')
+        ax2.set_ylabel("Cumulative reward")
+        ax2.set_ylim(ylim)
+
+        plot_name_ep(data, list(data.keys())[0], 5000, "score", name="Cumulative Reward", use_moving_average=True, n_runs=5, ax=ax2, color="tab:red")
+
+        # fig.legend()
+        fig.tight_layout()
+        fig.savefig("../figures/" + env_name + "_model" + ".png")
+
+    # plt.show()
+
+
+def print_model_bias(data, it, n_runs=5, env_name=None, pick=False):
+    plt.figure(figsize=(4,3), dpi=300)
+    plt.grid()
+
+    errors = []
+    errors_observations = None
+    episodes = []
+    trainer, agents, env, ep = setup_agent_env(data, it, 0, env_name=env_name)
+    rollout_mod = {1: []}
+    rollout_real = {1: []}
+    observation = np.concatenate(env.reset())
+    # print(len(observation))
+    if errors_observations is None:
+        errors_observations = [[] for obs in observation]
+    obs_real ={1: [[] for obs in observation]}
+    obs_mod = {1: [[] for obs in observation]}
+    episodes.append(int(ep))
+    for run in range(n_runs):
+        trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name)
+        for ep in range(250):
             score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True)
-            print("Score: " + str(score))
-            start = random.randint(0, 1)
-            if agents[0].model:
+            # print("Score: " + str(score))
+            n_steps = 1
+            start = random.randint(0, 23)
+            if trainer.model:
                 rewards = statistics["rewards"]
                 observations = statistics["observations"]
                 actions = statistics["actions"]
                 rews_pred_mult = []
                 for rollout in range(1):
-                    observation = observations[start][0]
+                    observation = np.concatenate(observations[start], axis=0)
                     rews_real = []
                     rews_pred = []
                     for step in range(n_steps):
-                        rews_real.append(rewards[start+step][0])
-                        action = actions[start + step][0]
-                        observation, rew_predict = agents[0].model.step_single(observation, action)
+                        rews_real.append(rewards[start+step+1][0])
+                        obs_real_i = np.concatenate(observations[start+step+1]).tolist()
+                        action = actions[start + step]
+                        observation, rew_predict = trainer.model.step_single(observation, action)
+                        for n,obs_real_i_i in enumerate(obs_real_i):
+                            obs_real[1][n].append(obs_real_i_i)
+                            obs_mod[1][n].append(observation[n])
                         rews_pred.append(rew_predict[0])
-                        for j in range(len(observation)):
-                            rollout_mod[j][step].append(observation[j])
-                            rollout_real[j][step].append(observations[start+step+1][0][j])
-                            rollout_mod_naive[j][step].append(observations[start][0][j])
-
-        # plt.scatter([rollout_mod[1][2][k] for k in range(len(rollout_mod[0][2]))], [rollout_real[1][2][k] for k in range(len(rollout_mod[0][2]))])
-        plt.show()
-        num_cor = 0
-        corrs_tot.append([])
-        for rol_mod, rol_real, rol_mod_naive in zip(rollout_mod, rollout_real, rollout_mod_naive):
-            corrs = [pearsonr(single_len_mod, single_len_real)[0] for single_len_mod, single_len_real in zip(rol_mod, rol_real)]
-            corrs_naive = [pearsonr(single_len_mod, single_len_real)[0] for single_len_mod, single_len_real in zip(rol_mod_naive, rol_real)]
-            corrs_tot[-1].append(corrs_naive)
-
-
-    for corrs in zip(*corrs_tot):
-        plt.plot(np.mean(corrs, axis=0))#, label=str(num_cor))
-    num_cor += 1
-
-    plt.xlabel("Rollout length")
-    plt.ylabel("Correlation with real observations")
-    plt.legend()
-    plt.ylim(-0.2, 1.0)
-    plt.grid()
-    plt.title("Model trained for " + str(it*10) + " episodes")
-    plt.show()
+                    rews_pred_mult.append(rews_pred)
+            rews_real_cum = np.cumsum(rews_real)
+            rews_pred_cum_mult = [np.cumsum(rews) for rews in rews_pred_mult]
+            for item in rews_pred_cum_mult:
+                for key in rollout_mod.keys():
+                    rollout_mod[key].append(item[key-1])
+                    rollout_real[key].append(rews_real_cum[key-1])
+    # Calculate stuff
+    for key in rollout_mod.keys():
+        pred = np.array(rollout_mod[key])
+        target = np.array(rollout_real[key])
+        print("Mean reward real (" + env_name + "): " , np.mean(target), "(+- )", 2*np.std(target)/np.sqrt(len(target)))
+        print("Mean reward model (" + env_name + "): " , np.mean(pred), "(+- )", 2*np.std(pred)/np.sqrt(len(pred)))
+        print("Bias", (np.mean(pred) - np.mean(target))/np.mean(target))
 
 def analyze_model_obs_statistics(data, it, runs=[0,1,2]):
     corrs_tot = []
@@ -399,70 +631,6 @@ def analyze_model_obs_statistics(data, it, runs=[0,1,2]):
                         rews_real.append(rewards[start+step][0])
                         action = actions[start + step][0]
                         observation, rew_predict = agents[0].model.step_single(observation, action)
-                        rews_pred.append(rew_predict[0])
-                        for j in range(len(observation)):
-                            rollout_mod[j][step].append(observation[j])
-                            rollout_real[j][step].append(observations[start+step+1][0][j])
-                            rollout_mod_naive[j][step].append(observations[start][0][j])
-
-        # plt.scatter([rollout_mod[1][2][k] for k in range(len(rollout_mod[0][2]))], [rollout_real[1][2][k] for k in range(len(rollout_mod[0][2]))])
-        plt.show()
-        num_cor = 0
-        corrs_tot.append([])
-        for rol_mod, rol_real, rol_mod_naive in zip(rollout_mod, rollout_real, rollout_mod_naive):
-            corrs = [pearsonr(single_len_mod, single_len_real)[0] for single_len_mod, single_len_real in zip(rol_mod, rol_real)]
-            corrs_naive = [pearsonr(single_len_mod, single_len_real)[0] for single_len_mod, single_len_real in zip(rol_mod_naive, rol_real)]
-            corrs_tot[-1].append(corrs)
-
-    for corrs in zip(*corrs_tot):
-        plt.plot(np.mean(corrs, axis=0))#, label=str(num_cor))
-    num_cor += 1
-
-    plt.xlabel("Rollout length")
-    plt.ylabel("Correlation with real observations")
-    plt.legend()
-    plt.ylim(-0.2, 1.0)
-    plt.grid()
-    plt.title("Model trained for " + str(it*10) + " episodes")
-    plt.show()
-
-
-def analyze_model_obs_statistics_degraded(data, it, runs=[0]):
-    corrs_tot = []
-    for run in runs:
-        n_steps = 101
-        agents, env = setup_agent_env(data, it, run)
-        _, env_deg = setup_agent_env(data, it, run)
-        env_deg.reset()
-        model = DegradedSim(env_deg)
-
-        rollout_mod = [[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
-        rollout_real =[[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
-        rollout_mod_naive = [[[] for i in range(n_steps)] for j in range(env.observation_space[0].shape[0])]
-
-        # rollout_mod = {1: [], 10:[], 50:[],100:[]}
-        # rollout_real = {1: [], 10:[], 50:[],100:[]}
-
-        for ep in range(100):
-            score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True, store_states=True)
-            print("Score: " + str(score))
-            start = random.randint(0, 500)
-            if model:
-                rewards = statistics["rewards"]
-                observations = statistics["observations"]
-                actions = statistics["actions"]
-                states = statistics["states"]
-                rews_pred_mult = []
-                for rollout in range(5):
-                    observation = observations[start][0]
-                    state = states[start]
-                    rews_real = []
-                    rews_pred = []
-                    for step in range(n_steps):
-                        rews_real.append(rewards[start+step][0])
-                        action = actions[start + step][0]
-                        observation, rew_predict = model.step_single(observation, action, state=state)
-                        state = model.env.get_state()
                         rews_pred.append(rew_predict[0])
                         for j in range(len(observation)):
                             rollout_mod[j][step].append(observation[j])
@@ -539,16 +707,20 @@ def analyze_mean_model_obs_corr(data, its, run=0):
     plt.title("Correlations of observations")
     plt.show()
 
-def setup_agent_env(data, it, run, actor_it=None, env_name="simple_spread"):
-    env = EnvWrapper("particle", env_name)
+def setup_agent_env(data, it, run, actor_it=None, env_name="simple_spread", benchmark=False):
+    env = EnvWrapper("particle", env_name, benchmark=benchmark)
     if not actor_it:
         actor_it = it
     trainer = MASAC(env.n_agents, env.observation_space, env.action_space,
                     use_model=True, hidden_dims_actor=(128,128),
                     hidden_dims_model=(200,200,200,200))
     agents = trainer.agents
+    name_run = [k for k in data.keys()][0]
     ep = data[name_run]["runs"][run]["networks_agents"][actor_it][0]
-    trainer.model.load_state_dict(data[name_run]["runs"][run]["networks_model"][it][3])
+    try:
+        trainer.model.load_state_dict(data[name_run]["runs"][run]["networks_model"][it][3])
+    except:
+        print("Loaded no model")
     for agent_n, agent in enumerate(agents):
         agent.actor.load_state_dict(data[name_run]["runs"][run]["networks_agents"][actor_it][3][agent_n]["actor"])
         for critic, state_dict in zip(agent.critics, data[name_run]["runs"][run]["networks_agents"][it][3][agent_n]["critics"]):
@@ -600,7 +772,7 @@ def plot_all_run(data, var="score", plot_janner=True, baseline=None, baseline_na
                 data_temp = pickle.load(open(fname, 'rb'))
 
                 ## plot trial mean
-                plt.plot(data_temp['x'] * 1000, data_temp['y'], linewidth=1.5, label=alg + " (Janner et al.)",
+                plt.plot(data_temp['x'] * 1000, data_temp['y'], linewidth=1.5, label="MBPO (data from Janner et al.)",
                          c=colors[alg])
                 ## plot error bars
                 plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
@@ -623,7 +795,8 @@ def plot_all_run(data, var="score", plot_janner=True, baseline=None, baseline_na
 
 def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseline_name=None,
                       use_moving_average=False,
-                      var_name="Score", names=None, steps_max=5000, ylim=(0.,250.)):
+                      var_name="Score", names=None, steps_max=5000, ylim=(0.,250.), n_runs=None, name_fig="test"):
+    plt.figure(figsize=(4,3), dpi=300)
     if plot_janner:
         tasks = ["cheetah"]
         algorithms = ['mbpo']
@@ -641,14 +814,13 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
                 data_temp = pickle.load(open(fname, 'rb'))
 
                 ## plot trial mean
-                plt.plot(data_temp['x'] * 1000, data_temp['y'], linewidth=1.5, label=alg + " (Janner et al.)",
+                plt.plot(data_temp['x'], data_temp['y'], linewidth=1.5, label="MBPO (data from Janner et al.)",
                          c=colors[alg])
                 ## plot error bars
-                plt.fill_between(data_temp['x'] * 1000, data_temp['y'] - data_temp['std'],
+                plt.fill_between(data_temp['x'], data_temp['y'] - data_temp['std'],
                                  data_temp['y'] + data_temp['std'], color=colors[alg],
                                  alpha=0.25)
     steps_max = steps_max
-    plt.figure(figsize=(5,4))
     for i_log, log in enumerate(logs):
         if names:
             name = names[i_log]
@@ -656,28 +828,32 @@ def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseli
             name = log
         data = torch.load("../logs/" + log + ".p", map_location="cpu")
         for key in data.keys():
-                plot_name_ep(data, key, steps_max, var, name=name, use_moving_average=use_moving_average)
+                plot_name_ep(data, key, steps_max, var, name=name, use_moving_average=use_moving_average, n_runs=n_runs)
     # plot_data_csv("../logs/MASAC.csv", steps_max, "MASAC (Data by Gupta et al.)")
     plt.xlim(1., steps_max)
-    plt.xlabel("Episode")
+    plt.xlabel("Episodes trained")
     #plt.ylim(-200,-120)
     plt.ylim(*ylim)
     plt.ylabel(var_name)
     plt.legend()
     plt.grid()
-    plt.show()
+    plt.tight_layout()
+    plt.savefig("../figures/" + name_fig + ".png")
+
 
 def plot_data_csv(file, steps_max, name):
     data = np.genfromtxt(file, delimiter=",", names=["x", "y"])
     plt.plot(data["x"], data["y"], label=name)
 
-def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False):
+def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False, n_runs=None, ax=None, color=None):
     steps_max = min(steps_max, data[key]["runs"][0][var][-1][0])
-    steps = np.arange(0,steps_max,1)
+    steps = np.arange(0,steps_max+1,1)
     if not name:
         name=key + "(ours)"
     values = []
-    for run in data[key]["runs"]:
+    if not n_runs:
+        n_runs = len(data[key]["runs"])
+    for run in data[key]["runs"][:n_runs]:
         # run = data[key]["runs"][0] #Only take first run
         values.append([])
         steps_var = [val[0] for val in run[var]]
@@ -691,29 +867,14 @@ def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False)
     else:
         values= np.array(values)
     mean_scores = np.mean(values, axis=0)
+    print(mean_scores[-1])
     std_scores = np.std(values, axis=0)/np.sqrt(values.shape[0])
-    # if use_moving_average:
-    #     mean_scores = moving_average(mean_scores)
-    #     std_scores = moving_average(std_scores)
-    if "actor" in name:
-        name = "MASAC (Shared Critic and Actor)"
-    # elif "critic" in name:
-    #     name = "MASAC (Shared Critic)"
-    # elif "sac" in name:
-    #     name = "SAC"
-    # elif "navigation_sharebuffer" in name:
-    #     name = "SAC (Shared Buffer)"
-    elif "no_model" in name:
-        name = "Multi-Agent Actor-Critic"
-    elif "model" in name:
-        name = "Multi-Agent Model-Based Actor-Critic"
-    elif "tag_masac" in name:
-        name = "Multi-Agent Actor-Critic"
-
-    # else:
-    #     name = "MASAC"# (Model-Based)"
-    plt.plot(steps, mean_scores, label=name)
-    plt.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25)
+    if not ax:
+        plt.plot(steps, mean_scores, label=name)
+        plt.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25)
+    else:
+        ax.plot(steps, mean_scores, label=name, c=color)
+        ax.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25, color=color)
 
 def plot_name(data, key, steps, var, name=None, use_moving_average=False):
     if not name:
@@ -966,94 +1127,114 @@ def plot_mse_noise(logs, data, its):
 
     plt.show()
 
-def count_rew_greater_0(logs):
-    for log in logs:
-        data = torch.load("../logs/" + log + ".p", map_location="cpu")
-        for key in data.keys():
-            count_tot = 0
-            count_rew = 0
-            for run in data[key]["runs"]:
-                for (ep, _, _, scores) in run["score"]:
-                    if ep>1000 and ep<=2000:
-                        if scores[0] > 0:
-                            count_rew += 1
-                        count_tot += 1
-            print(log, count_tot)
-            print(log, count_rew)
-            print("Chance of catching prey:", float(count_rew)/float(count_tot))
+def count_rew_greater_0(data, its, n_runs=5, env_name=None):
+    for it in its:
+        count_rew = 0
+        count_tot = 0
+        count_col = 0
+        for run in range(n_runs):
+            trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name, benchmark=True)
+            for i in range(250):
+                score, _, statistics = run_episode(env, agents, eval=True, render=False, greedy_eval=False, store_data=True, benchmark=True)
+                if env_name == "simple_tag_coop":
+                    if score[0] > 0:
+                        count_rew += 1
+                if env_name == "simple_spread":
+                    covered = False
+                    collision = False
+                    for step_data in statistics:
+                        if step_data["n"][0][3]==3:
+                            covered = True
+                        if step_data["n"][0][1] > 1 or step_data["n"][1][1] > 1 or step_data["n"][1][1] > 1:
+                            collision = True
+                    if covered and not collision:
+                        count_rew += 1
+                    if collision:
+                        count_col += 1
+                count_tot += 1
+        print("Episode: ", ep)
+        print(count_tot)
+        print(count_rew)
+        print("Chance of success:", float(count_rew)/float(count_tot))
+        print("Chance of collision", float(count_col)/float(count_tot))
 
         # plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
 
-#First plot nav results
-logs_nav = ["cheetah_verify4"]
-plot_all_run_logs(logs_nav, var="score", plot_janner=True, var_name="Return",
-                  names=None,
-                  steps_max=50,
-                  ylim=(0, 6000))
+# Plot cheetah results
+# logs_nav = ["cheetah_verify5"]
+# names = ["MAMBPO (ours)"]
+# plot_all_run_logs(logs_nav, var="score", plot_janner=True, var_name="Cumulative reward per episode",
+#                   names=names,
+#                   steps_max=50,
+#                   ylim=(0, 12000), n_runs=3, name_fig="cheetah_results")
+# plt.savefig("../figures/cheetah_results.png")
 
-logs_nav = ["nav_mambpo_5step_5run_lr", "nav_masac_5run"] #, "nav_masac_1_auto_2", "nav_mambpo_cheetah2"]
-names = ["MAMBPO", "MASAC"]
-plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Reward",
-                  names=None,
-                  steps_max=5000,
-                  ylim=(-180,-120))
-plt.savefig("../figures/nav_results.png")
-
+# First plot nav results
+# logs_nav = ["nav_mambpo_10step", "nav_masac_5run", "nav_masac_10step"] #, "nav_masac_1_auto_2", "nav_mambpo_cheetah2"]
+# names = ["MAMBPO (10 steps)", "MASAC (1 step)", "MASAC (10 steps)"]
+# plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Cumulative reward per episode",
+#                   names=names,
+#                   steps_max=5000,
+#                   ylim=(-190,-120), n_runs=5, name_fig="nav_results")
+# plt.savefig("../figures/nav_results.png")
+#
 #Plot tag results
-logs_nav = ["tag_mambpo_5step_5run_lr", "tag_mambpo_5step_5run", "tag_mambpo_5step_5run_lr2", "tag_mambpo_5step_5run_4","tag_masac_model", "tag_masac_1_auto_2"]
-logs_nav = ["tag_mambpo_5step_5run_lr", "tag_masac_5run"]#, "tag_masac_1_auto_2"]
+logs_nav = ["tag_masac_5run"]#, "tag_masac_1_auto_2"]
 
-names = ["MAMBPO", "MASAC"]
-plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Reward",
+#names = ["MAMBPO", "MASAC"]
+plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Cumulative reward per episode",
                   names=None,
                   steps_max=10000,
-                  ylim=(0, 250))
+                  ylim=(0, 250), n_runs=5, name_fig="tag_results")
 plt.savefig("../figures/tag_results.png")
-
-
-
-name = "tag_mambpo_5step_5run_lr"
-#cheetah_plotmodel_4layers_regulated_2
-name_run = "SAC4"
-env_name="simple_tag_coop"
-data = torch.load("../logs/" + name + ".p", map_location="cpu")
-analyze_model(data, 0, run=0, env_name=env_name)
-analyze_model_statistics(data, 20, run=0, env_name=env_name)
-plot_model_statistics_corr(data, [i*4 for i in range(11)], run=0, env_name=env_name)
-
-# logs = ["3_agent_model", "3_agent", "4_agent", "4_agent_lowlr"]
-# logs = [ "4_agent", "4_agent_lowlr"]
-# logs = [ "4_agent_new", "4_agent_lowlr"]
+plt.show()
+# #
 #
-# logs = ["particle_long", "particle_long_common_critic", "particle_long_common_critic_common_actor", "particle_long_sac", "navigation_sharebuffer", "navigation_5_step_no_model", "navigation_5_step_model","navigation_20_step_no_model"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
-# # logs = ["particle_comm", "particle_comm_sac"]#, "particle_long_common_critic_common_actor", "particle_long_sac"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
-# # logs = ["particle_long", "particle_long_common_critic", "particle_long_common_critic_common_actor", "particle_long_sac", "navigation_sharebuffer", "navigation_5_step_no_model", "navigation_5_step_model","navigation_20_step_no_model"]#, "4_agent_5", "4_agent_grad1", "4_agent_grad0.5", "4_agent_5_2"]
-# logs = ["particle_long", "particle_long_sac", "navigation_sharebuffer"]
-# plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+# name = "nav_mambpo_10step"
+# # # name = "nav_masac_5run"
+# #
+# # name_run = "SAC4"
+# env_name="simple_spread"
+# data = torch.load("../logs/" + name + ".p", map_location="cpu")
+# # play_game(data, 20, 0, env_name=env_name, steps=5, name="nav_env")
+# #
+# # # play_game(data, 20, 0, env_name=env_name)
+# # count_rew_greater_0(data, [i for i in [0,5,10,20]], n_runs=5, env_name=env_name)
+# plot_model_statistics_r22(data, [i for i in range(0,21,1)], n_runs=5, env_name=env_name, pick=True, add_mean_line=True, ylim=(-190,-120))
+# #print_model_bias(data, 20, n_runs=5, env_name=env_name)
 #
-# logs = ["navigation_no_model_improved_4", "navigation_model_improved_4","navigation_no_model_improved_4_sac", "navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_no_model_improved", "navigation_model_improved"]
-# plot_all_run_logs(logs, var="mean_score_greedy", plot_janner=False, use_moving_average=True, var_name="Reward")
+# # plt.show()
+# #
+# # name = "nav_masac_5run"
+# # name_run = "SAC4"
+# # env_name="simple_spread"
+# # data = torch.load("../logs/" + name + ".p", map_location="cpu")
+# # # count_rew_greater_0(data, [i for i in  [0,5,10,20]], n_runs=2, env_name=env_name)
+# #
+# name = "tag_mambpo_10step"
+# # name = "tag_masac_5run"
 #
+# # name_run = "SAC4"
+# env_name="simple_tag_coop"
+# data = torch.load("../logs/" + name + ".p", map_location="cpu")
+# # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env")
+# # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env2")
+# # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env3")
+# # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env4")
+# # play_game(data, 20, 0, env_name=env_name)
+# plot_model_statistics_r22(data, [i for i in range(0,21,1)], n_runs=5, env_name=env_name, pick=True, add_mean_line=True, ylim=(0,250))
+# # count_rew_greater_0(data, [i for i in  [0,5,10,20]], n_runs=5, env_name=env_name)
 
-#play_game(data, 40, 0)
-# logs = ["navigation_model_improved_4_nonorm_lowlr", "navigation_no_model_improved_4_nonorm_lowlr", "navigation_model_improved_20_nonorm_lowlr", "navigation_model_cheetah"]
-logs = ["navigation_no_model_improved_4_nonorm_lowlr","navigation_model_cheetah_simple",
-        # "navigation_model_cheetah_correct", , "navigation_model_cheetah",
-        # "navigation_model_cheetah_simple_2",
-        # "navigation_model_cheetah_simple_200",
-        # "navigation_model_cheetah_simple_512",
-        # "navigation_model_cheetah_simple_lowreg",
-        "navigation_model_cheetah_improved",
-        "navigation_no_model_cheetah_improved",
-        "particle_long"]
-logs = ["tag_masac_model", "tag_masac", "tag_masac_model_10", "tag_masac_1_auto_2"]
-# count_rew_greater_0(logs)
+# print_model_bias(data, 20, n_runs=5, env_name=env_name)
 
-#plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward", steps_max=10000)
-logs = ["navigation_model_cheetah_improved", "navigation_no_model_cheetah_improved", "nav_masac_model", "nav_masac_model_5", "nav_masac_model_5_500","nav_masac"]
-#plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward")
-logs = [ "nav_masac_model_5_500", "nav_masac_model_5_1000", "nav_masac_5_500", "nav_masac_model_10_1000", "nav_masac"]
-logs = ["nav_masac_model_5_500", "nav_masac_5_500", "nav_masac", "nav_masac_model_10_500", "nav_masac_1_noauto_0.05", "nav_masac_1_noauto_0.1", "nav_masac_1_noauto_0.02", "nav_masac_model_10_500_noauto", "nav_masac_1_auto_2"]
-logs = ["nav_masac_model_5_500", "nav_masac", "nav_masac_1_auto_2", "nav_masac_1_noauto_0.02"]
-
-#plot_all_run_logs(logs, var="score", plot_janner=False, use_moving_average=True, var_name="Reward", steps_max=10000)
+# plt.show()
+#
+# count_rew_greater_0(data, [i for i in [0,5,10,20]], n_runs=2, env_name=env_name)
+#
+# name = "tag_masac_5run"
+# name_run = "SAC4"
+# env_name="simple_tag_coop"
+# data = torch.load("../logs/" + name + ".p", map_location="cpu")
+# count_rew_greater_0(data, [i for i in  [0,5,10,20]], n_runs=2, env_name=env_name)
+#
+# plot_model_statistics_r2(data, [i for i in range(0,21,2)], n_runs=5, env_name=env_name)

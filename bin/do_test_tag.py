@@ -180,13 +180,12 @@ def single_run(env, trainer_fn, data_log, seed, agent_kwargs=dict(), n_steps=Non
 
 if __name__ == '__main__':
     """Main script to run experiments"""
-    name = "simple_spread"     # Environment name, select from: "HalfCheetah-v2", "simple_tag_coop", "simple_spread"
+    name = "simple_tag_coop"     # Environment name, select from: "HalfCheetah-v2", "simple_tag_coop", "simple_spread"
     n_runs = 5                 # Amount of runs to do
     logpath = "./logs/"         # Logging directory
-    logname = "nav_masac_5run"  # Name of log file
-    config_name = "default_masac"
-    suite = "particle"
-    n_steps = 25*5001
+    logname = "tag_masac_long"  # Name of log file
+    config_name = "default"
+    n_steps = 25*20001
     # Setup logging (to .log file)
     logfile = logpath + logname
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)

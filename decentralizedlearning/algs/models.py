@@ -77,7 +77,7 @@ class EnsembleModel(nn.Module):
         self.use_stochastic = use_stochastic
         self.name = name
         self.n_models = n_models
-        self.n_elites = 10
+        self.n_elites = 5
         if monitor_losses:
             self.logger = logging.getLogger('root')
         self.models = nn.ModuleList([Model(input_dim, hidden_dims, obs_dim, use_stochastic=use_stochastic) for i in range(n_models)])
@@ -240,10 +240,10 @@ class EnsembleModel(nn.Module):
 
 
 
-
+    #
     # def train_models(self, optim, buffer, holdout=0.2, multistep_buffer=None):
     #     batch_size = 256
-    #     max_epochs = 15
+    #     max_epochs = 99
     #     buff_train, buff_val = buffer.get_buffer_split(holdout=holdout)
     #     epoch_iter = range(max_epochs)#itertools.count()
     #     grad_steps = 0
@@ -404,8 +404,8 @@ class Model(nn.Module):
         """
         super().__init__()
         self.use_stochastic = use_stochastic
-        self.MAX_LOG_VAR = torch.tensor(-2., dtype=torch.float32) #was -2.
-        self.MIN_LOG_VAR = torch.tensor(-5., dtype=torch.float32) # was -5.
+        self.MAX_LOG_VAR = torch.tensor(-2, dtype=torch.float32) # 0.5 was -2.
+        self.MIN_LOG_VAR = torch.tensor(-5., dtype=torch.float32) #-10 was -5.
         layers = []
         #layers += [nn.Linear(input_dim, hidden_dims[0]), nn.BatchNorm1d(hidden_dims[0]), nn.LeakyReLU(), ]
         layers += [nn.Linear(input_dim, hidden_dims[0]), nn.LeakyReLU(), ]

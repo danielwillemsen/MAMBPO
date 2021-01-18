@@ -271,7 +271,7 @@ class MASAC:
             if self.real_buffer.len() >= self.par.batch_size and self.step_i > self.par.step_random:
                 if self.par.use_model:
                     self.update_rollout_length()
-                    batch_this_epoch = 2000*self.par.n_steps#self.par.batch_size*self.par.update_steps*self.par.update_every_n_steps*8
+                    batch_this_epoch = 2000*self.par.n_steps#self.par.batch_size*self.par.n_steps*self.par.update_every_n_steps*8
                     fake_samples = self.model.generate_efficient(self.model_sample_buffer.sample_tensors(n=batch_this_epoch),
                                                                  [agent.actor for agent in self.agents],
                                                                  diverse=self.par.diverse,

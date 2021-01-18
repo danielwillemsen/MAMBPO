@@ -454,12 +454,12 @@ class EfficientReplayBuffer:
 
     def get_buffer_split(self, holdout):
         n = len(self)
-        n_val = int(holdout*n)
+        n_val = int((1-holdout)*n)
         buff_train = EfficientReplayBuffer(size=self.max_size, device=self.device)
         buff_val = EfficientReplayBuffer(size=self.max_size, device=self.device)
         buff_train.add_multiple((self.o[n_val:self.current_size].clone(), self.a[n_val:self.current_size].clone(), self.r[n_val:self.current_size].clone(), self.o_next[n_val:self.current_size].clone(), self.done[n_val:self.current_size].clone()))
         buff_val.add_multiple((self.o[:n_val].clone(), self.a[:n_val].clone(), self.r[:n_val].clone(), self.o_next[:n_val].clone(), self.done[:n_val].clone()))
-        return buff_train, buff_val
+        return buff_val, buff_train
 
 class ReplayBuffer():
     def __init__(self, size=1000000, batch_size=128, device="cpu"):

@@ -95,13 +95,13 @@ def get_hyperpar(name):
                            step_random=0,
                            update_every_n_steps=1,
                            update_model_every_n_steps=250,
-                           n_steps=5,
+                           n_steps=1,
                            delay=1,
                            n_models=10,
                            batch_size=256,
                            weight_decay=0.0,
                            alpha=0.1,
-                           use_model=True,
+                           use_model=False,
                            use_model_stochastic=True,
                            diverse=True,
                            autotune=True,
@@ -115,16 +115,16 @@ def get_hyperpar(name):
         return SACHyperPar(hidden_dims_actor=(256, 256),
                            hidden_dims_critic=(256, 256),
                            hidden_dims_model=(200, 200, 200, 200),
-                           gamma=0.95, #was 0.99
+                           gamma=0.99, #was 0.99
                            tau=0.005,
-                           lr_actor=0.003, #was 0.0003
-                           lr_critic=0.003, #was 0.0003
+                           lr_actor=0.0003, #was 0.0003
+                           lr_critic=0.0003, #was 0.0003
                            lr_model=0.001,
                            l2_norm=0.00000,
                            step_random=5000,
                            update_every_n_steps=1,
                            update_model_every_n_steps=250,
-                           n_steps=5, #was 40
+                           n_steps=40, #was 40
                            n_models=10,
                            batch_size=256,
                            weight_decay=0.0,
@@ -133,7 +133,7 @@ def get_hyperpar(name):
                            use_model_stochastic=True,
                            diverse=True,
                            autotune=True,
-                           target_entropy=-2.0, #was -3
+                           target_entropy=-3.0, #was -3
                            name=name)
     else:
         raise Exception("Config not found")
