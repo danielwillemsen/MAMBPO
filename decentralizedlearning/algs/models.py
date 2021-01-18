@@ -7,6 +7,9 @@ import logging
 from decentralizedlearning.algs.utils import scale_action
 
 class EnsembleModel(nn.Module):
+    """ Ensemble of models as used in the MAMBPO algorithm.
+
+    """
     def __init__(self, input_dim, hidden_dims, obs_dim, n_models, monitor_losses=False, use_stochastic=True, name="cheetah", device=None):
         super().__init__()
         self.device = device
@@ -180,8 +183,15 @@ class EnsembleModel(nn.Module):
     #     self.logger.info("Stopped. Epoch:"+ str(epoch)+ "Grad_steps:" +str(grad_steps))
     #     return
     def train_models(self, optim, buffer, **kwargs):
-        batch_size = 512 #was 512
-        n_steps_model = 500 #was 500 / 2000
+        """ Method to train models
+
+        :param optim: optimizer (usually adam)
+        :param buffer: replay buffer on which to train (B_env)
+        :param kwargs:
+        :return:
+        """
+        batch_size = 512
+        n_steps_model = 500
         for step in range(n_steps_model):
             self.update_step(optim, buffer.sample_tensors(n=batch_size))
         self.logger.info("Stopped.")
@@ -233,6 +243,17 @@ class EnsembleModel(nn.Module):
         return ret_samples
 
     def generate_efficient(self, samples, actor, diverse=True, batch_size=128, rollout_length=1, obs_i_per_agent=None, act_i_per_agent=None):
+        """ Generate a batch of model samples from a batch of real environment samples.
+
+        :param samples: input transitions
+        :param actor: (list of) actors that are used to select actions
+        :param diverse: used for debugging. Whether or not the actors select actions or that the actions remain default.
+        :param batch_size:
+        :param rollout_length: amount of steps to perform a rollout. In the thesis 1 is used.
+        :param obs_i_per_agent:
+        :param act_i_per_agent:
+        :return:
+        """
         ret_samples = []
         with torch.no_grad():
             for i in range(rollout_length):
@@ -241,7 +262,7 @@ class EnsembleModel(nn.Module):
                 else:
                     o = new_o_ret
                 if not diverse:
-                    a = samples["a"] #actor(o, greedy=False)
+                    a = samples["a"]
                 else:
                     if type(actor) is not list:
                         a = actor(o, greedy=False)
@@ -250,10 +271,6 @@ class EnsembleModel(nn.Module):
                         for i, actor_i in enumerate(actor):
                             a_i = actor_i(o[:,obs_i_per_agent[i]:obs_i_per_agent[i+1]])
                             a[:, act_i_per_agent[i]:act_i_per_agent[i + 1]] = a_i
-
-                    #else:
-                    #    o = new_o_ret
-                    #    a = actor(o, greedy=False)
                 n_models = len(self.elites)
                 o_next_pred, r_pred = self.forward_elites(o, a)
                 mu_o = o_next_pred[0]
@@ -267,11 +284,11 @@ class EnsembleModel(nn.Module):
                     new_o = torch.normal(mu_o, torch.exp(0.5*log_var_o))
                     r = torch.normal(mu_r, torch.exp(0.5*log_var_r))
                 else:
+                    # If not no stochastic networks are used, we do this hacky stuff to get a nearly deterministic result.
                     new_o = torch.normal(mu_o, 0.00001)
                     r = torch.normal(mu_r, 0.00001)
                 new_o_ret = new_o[randomlist, idx, :]
                 done = samples["done"]
-                #done = self.termination_fn(new_o_ret, a)
                 ret_samples.append((o, a, r[randomlist, idx, :].squeeze(-1), new_o_ret, done))
             return ret_samples
 
@@ -304,7 +321,6 @@ class Model(nn.Module):
         self.var_reward = nn.Linear(hidden_dims[-1], 1)
 
     def forward(self, input):
-        # x = torch.cat([observation, action], dim=-1)
         x = self.net(input)
         if True:
             log_var_output = self.var_output(x)
@@ -320,18 +336,3 @@ class Model(nn.Module):
                 log_var_output *= 0.
 
             return [self.mu_output(x), log_var_output], [self.mu_reward(x), log_var_reward]
-        # else:
-        #     mu_out = self.mu_output(x)
-        #     mu_rew = self.mu_reward(x)
-        #
-        #     var_output = mu_out*0.
-        #     var_reward = mu_out*0.
-        #     return [mu_out, var_output], [mu_rew, var_reward]
-
-    #
-    # def sample(self, observation, action):
-    #     with torch.no_grad():
-    #         new_o, r = self.forward(observation, action)
-    #         new_o = torch.normal(new_o[0], torch.sqrt(new_o[1]))
-    #         r = torch.normal(r[0], torch.sqrt(r[1]))
-    #     return new_o, r
