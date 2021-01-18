@@ -5,7 +5,6 @@ sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodule
 sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/environments'))
 
 import gym
-from decentralizedlearning.submodules.multiagent_mujoco.src.multiagent_mujoco.mujoco_multi import MujocoMulti
 from multiagent.environment import MultiAgentEnv
 import multiagent.scenarios as scenarios
 from waypoints import WaypointsEnv

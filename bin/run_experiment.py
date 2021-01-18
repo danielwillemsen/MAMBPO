@@ -183,9 +183,9 @@ if __name__ == '__main__':
     name = "simple_tag_coop"     # Environment name, select from: "HalfCheetah-v2", "simple_tag_coop", "simple_spread"
     n_runs = 5                 # Amount of runs to do
     logpath = "./logs/"         # Logging directory
-    logname = "tag_masac_long"  # Name of log file
-    config_name = "default"
-    n_steps = 25*20001
+    logname = "mambpo_test"  # Name of log file
+    config_name = "default_mambpo"
+    n_steps = 25*5001
     # Setup logging (to .log file)
     logfile = logpath + logname
     logging.basicConfig(filename=logpath + logname + ".log", filemode='w', level=logging.DEBUG)
