@@ -1,4 +1,4 @@
-from decentralizedlearning.algs.sac import SACHyperPar
+from decentralizedlearning.algs.masac import SACHyperPar
 def get_hyperpar(name):
     if name=="default_masac": #Config for tag and navigation
         return SACHyperPar(hidden_dims_actor=(128, 128),

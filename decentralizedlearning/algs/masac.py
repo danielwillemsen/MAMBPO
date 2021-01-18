@@ -62,6 +62,7 @@ class SACHyperPar:
         self.use_common_critic = bool(kwargs.get("use_common_critic", False))
         self.use_stochastic_actor = bool(kwargs.get("use_stochastic_actor", True))
         self.use_centralized_critic = bool(kwargs.get("use_centralized_critic", True))
+        self.use_shared_replay_buffer = bool(kwargs.get("use_shared_replay_buffer", False))
 
 class MASACAgent:
     def __init__(self, action_dim, device, par,

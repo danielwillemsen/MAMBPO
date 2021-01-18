@@ -8,7 +8,6 @@ sys.path.insert(1, os.path.join(sys.path[0], '../'))
 import numpy as np
 from envwrapper import EnvWrapper
 import itertools
-from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.algs.configs.config import get_hyperpar
 from decentralizedlearning.data_log import DataLog
 
@@ -182,7 +181,7 @@ if __name__ == '__main__':
     """Main script to run experiments"""
     name = "simple_tag_coop"     # Environment name, select from: "HalfCheetah-v2", "simple_tag_coop", "simple_spread"
     n_runs = 5                 # Amount of runs to do
-    logpath = "./logs/"         # Logging directory
+    logpath = "../logs/"         # Logging directory
     logname = "mambpo_test"  # Name of log file
     config_name = "default_mambpo"
     n_steps = 25*5001
@@ -203,7 +202,7 @@ if __name__ == '__main__':
 
     for run in range(n_runs):
         logger.info("run:" + str(run))
-        agent_fn = SAC
+        agent_fn = None
         for n_agent in [4]:
             env = EnvWrapper(suite, name, n_agents=n_agent, randomized=False)
             algname = "SAC"
