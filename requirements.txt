@@ -26,7 +26,7 @@ h5py==2.10.0
 idna==2.9
 imageio==2.8.0
 importlib-metadata==2.0.0
-Jinja2==2.11.2
+Jinja2==2.11.3
 joblib==0.17.0
 Keras-Preprocessing==1.1.2
 kiwisolver==1.2.0
