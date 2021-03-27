@@ -1,11 +1,14 @@
+import sys, os
+sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning/submodules/multiagent_particle_envs'))
+sys.path.insert(1, os.path.join(sys.path[0], '../decentralizedlearning'))
+sys.path.insert(1, os.path.join(sys.path[0], '../'))
+
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
-from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.envwrapper import EnvWrapper
 from decentralizedlearning.run_utils import run_episode
 from decentralizedlearning.algs.configs import config
-from decentralizedlearning.algs.models import DegradedSim
 from decentralizedlearning.algs.models import EnsembleModel
 from decentralizedlearning.algs.mambpo import MAMBPO, MAMBPOAgent
 import torch
@@ -51,12 +54,12 @@ def find_nearest_mult(array, values):
     idx = (np.abs(np.expand_dims(array, 1) - np.expand_dims(values, 0))).argmin(axis=0)
     return idx
 
-def play_game(data, it, run=0, env_name=None, steps=25, name=None):
+def play_game(data, it, run=0, env_name=None, steps=25, name=None, save_all=False):
     if not name:
         name = env_name
     trainer, agents, env, _ = setup_agent_env(data, it, run, env_name=env_name)
     env.reset()
-    score, _, statistics = run_episode(env, agents, eval=True, render=True, greedy_eval=False, store_data=True, steps=steps)
+    score, _, statistics = run_episode(env, agents, eval=True, render=True, greedy_eval=False, store_data=True, steps=steps, save_all=save_all, name=name)
     pyglet.image.get_buffer_manager().get_color_buffer().save(name+"test.png")
     print(score)
 
@@ -407,7 +410,7 @@ def plot_model_statistics_r2(data, its, n_runs=5, env_name=None):
 
 
 def plot_model_statistics_r22(data, its, n_runs=5, env_name=None, pick=False, add_mean_line=False,ylim=None):
-    plt.figure(figsize=(4,3), dpi=300)
+    plt.figure(figsize=(4,2), dpi=300)
     plt.grid()
 
     if not pick:
@@ -518,28 +521,30 @@ def plot_model_statistics_r22(data, its, n_runs=5, env_name=None, pick=False, ad
         #         ax1.plot(episodes, errors_observation, c='tab:orange', linewidth=0.25)
         #     else:
         #         ax1.plot(episodes, errors_observation, c='tab:orange', linewidth=0.25)
-        plt.plot(episodes, errors, marker="o", label="Reward ", c='tab:blue')
+        lns1 = ax1.plot(episodes, errors, marker="o", label=r"Model R$^2$ (reward)", c='tab:blue')
         errors_observation_mean = [np.mean(nums) for nums in zip(*errors_observations)]
 
-        # plt.plot(episodes, errors_observation_mean, marker="o", label="Observations", c='tab:orange')
-
+        lns2 = ax1.plot(episodes, errors_observation_mean, marker="o", label=r"Model R$^2$ (observations)", c='tab:orange')
         ax1.set_xlabel("Episodes trained")
-        ax1.set_ylabel(r"R$^2$ (Reward)")
+        ax1.set_ylabel(r"R$^2$")
         ax1.set_ylim(0.0, 1.0)
         ax1.set_xlim(0, 5000)
-        ax1.yaxis.label.set_color('tab:blue')
-        ax1.tick_params(axis='y', colors='tab:blue')
+        # ax1.yaxis.label.set_color('')
+        # ax1.tick_params(axis='y', colors='tab:blue')
         ax2 = ax1.twinx()
         ax2.yaxis.label.set_color('tab:red')
         ax2.tick_params(axis='y', colors='tab:red')
         ax2.set_ylabel("Cumulative reward")
         ax2.set_ylim(ylim)
 
-        plot_name_ep(data, list(data.keys())[0], 5000, "score", name="Cumulative Reward", use_moving_average=True, n_runs=5, ax=ax2, color="tab:red")
+        lns3 = plot_name_ep(data, list(data.keys())[0], 5000, "score", name="MAMBPO performance", use_moving_average=True, n_runs=5, ax=ax2, color="tab:red")
+        lns = lns1 + lns2 + lns3
+        labs = [l.get_label() for l in lns]
+        ax2.legend(lns, labs, loc=0)
 
         # fig.legend()
         fig.tight_layout()
-        fig.savefig("../figures/" + env_name + "_model" + ".png")
+        fig.savefig("../figures/" + env_name + "_model_perf" + ".png")
 
     # plt.show()
 
@@ -796,7 +801,7 @@ def plot_all_run(data, var="score", plot_janner=True, baseline=None, baseline_na
 def plot_all_run_logs(logs, var="score", plot_janner=True, baseline=None, baseline_name=None,
                       use_moving_average=False,
                       var_name="Score", names=None, steps_max=5000, ylim=(0.,250.), n_runs=None, name_fig="test"):
-    plt.figure(figsize=(4,3), dpi=300)
+    plt.figure(figsize=(4,2), dpi=300)
     if plot_janner:
         tasks = ["cheetah"]
         algorithms = ['mbpo']
@@ -873,8 +878,9 @@ def plot_name_ep(data, key, steps_max, var, name=None, use_moving_average=False,
         plt.plot(steps, mean_scores, label=name)
         plt.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25)
     else:
-        ax.plot(steps, mean_scores, label=name, c=color)
+        ln = ax.plot(steps, mean_scores, label=name, c=color)
         ax.fill_between(steps, mean_scores - std_scores, mean_scores + std_scores, alpha=0.25, color=color)
+        return ln
 
 def plot_name(data, key, steps, var, name=None, use_moving_average=False):
     if not name:
@@ -1132,6 +1138,10 @@ def count_rew_greater_0(data, its, n_runs=5, env_name=None):
         count_rew = 0
         count_tot = 0
         count_col = 0
+        count_cov_col = 0
+        count_not_cov = 0
+        count_double_fail = 0
+
         for run in range(n_runs):
             trainer, agents, env, ep = setup_agent_env(data, it, run, env_name=env_name, benchmark=True)
             for i in range(250):
@@ -1145,20 +1155,38 @@ def count_rew_greater_0(data, its, n_runs=5, env_name=None):
                     for step_data in statistics:
                         if step_data["n"][0][3]==3:
                             covered = True
-                        if step_data["n"][0][1] > 1 or step_data["n"][1][1] > 1 or step_data["n"][1][1] > 1:
+                        if step_data["n"][0][1] > 1 or step_data["n"][1][1] > 1 or step_data["n"][2][1] > 1:
                             collision = True
                     if covered and not collision:
                         count_rew += 1
                     if collision:
                         count_col += 1
+                    if covered and collision:
+                        count_cov_col += 1
+                    if not covered and not collision:
+                        count_not_cov += 1
+                    if collision and not covered:
+                        count_double_fail += 1
                 count_tot += 1
         print("Episode: ", ep)
         print(count_tot)
         print(count_rew)
         print("Chance of success:", float(count_rew)/float(count_tot))
-        print("Chance of collision", float(count_col)/float(count_tot))
+        print("Chance of covered", float(count_col)/float(count_tot))
+        print("Chance of cover fail", float(count_not_cov)/(float(count_tot)-float(count_rew)))
+        print("Chance of collision fail", float(count_cov_col)/(float(count_tot)-float(count_rew)))
+        print("Chance of double fail", float(count_double_fail)/(float(count_tot)-float(count_rew)))
 
-        # plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
+def generate_video(data, it, run, env_name=None, n_games=5, name="test"):
+    import glob
+    from PIL import Image
+    for i_game in range(n_games):
+        play_game(data, it, run, env_name=env_name, name=str(i_game)+name, save_all=True)
+    files = [f for f in sorted(glob.glob("../figures/videos/*"+name+"*.png"))]
+    img, *imgs = [Image.open(f) for f in sorted(glob.glob("../figures/videos/*"+name+"*.png"), key=os.path.getmtime)]
+    img.save(fp="../figures/videos/"+str(name)+".gif", format="GIF", append_images=imgs,
+             save_all=True, duration=20, loop=0)
+    # plot_name_ep(data, key, steps_max, var, name=log, use_moving_average=use_moving_average)
 
 # Plot cheetah results
 # logs_nav = ["cheetah_verify5"]
@@ -1170,37 +1198,47 @@ def count_rew_greater_0(data, its, n_runs=5, env_name=None):
 # plt.savefig("../figures/cheetah_results.png")
 
 # First plot nav results
-# logs_nav = ["nav_mambpo_10step", "nav_masac_5run", "nav_masac_10step"] #, "nav_masac_1_auto_2", "nav_mambpo_cheetah2"]
-# names = ["MAMBPO (10 steps)", "MAMBPO (1 step)", "MAMBPO (10 steps)"]
-# plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Cumulative reward per episode",
-#                   names=names,
-#                   steps_max=5000,
-#                   ylim=(-190,-120), n_runs=5, name_fig="nav_results")
-# plt.savefig("../figures/nav_results.png")
-#
+logs_nav = ["nav_mambpo_10step", "nav_masac_5run", "nav_masac_10step"] #, "nav_masac_1_auto_2", "nav_mambpo_cheetah2"]
+names = ["MAMBPO (10 steps)", "MASAC (1 step)", "MASAC (10 steps)"]
+plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Return",
+                  names=names,
+                  steps_max=5000,
+                  ylim=(-190,-120), n_runs=5, name_fig="nav_results")
+plt.savefig("../figures/nav_results.png")
+
 #Plot tag results
-logs_nav = ["tag_masac_5run"]#, "tag_masac_1_auto_2"]
+logs_nav = ["tag_mambpo_10step", "tag_masac_5run", "tag_masac_10step"]
 
 #names = ["MAMBPO", "MAMBPO"]
-plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Cumulative reward per episode",
-                  names=None,
-                  steps_max=10000,
+plot_all_run_logs(logs_nav, var="score", plot_janner=False, use_moving_average=True, var_name="Return",
+                  names=names,
+                  steps_max=5000,
                   ylim=(0, 250), n_runs=5, name_fig="tag_results")
 plt.savefig("../figures/tag_results.png")
-plt.show()
-# #
+# plt.show()
+# # #
 #
-# name = "nav_mambpo_10step"
-# # # name = "nav_masac_5run"
-# #
-# # name_run = "SAC4"
+name = "nav_mambpo_10step"
+# # # # name = "nav_masac_5run"
+# # #
+# # # name_run = "SAC4"
 # env_name="simple_spread"
 # data = torch.load("../logs/" + name + ".p", map_location="cpu")
+# # # play_game(data, 20, 0, env_name=env_name, steps=5, name="nav_env")
+# # #
+# # play_game(data, 20, 0, env_name=env_name, save_all=True)
+# generate_video(data, 20, 0, env_name=env_name, name=name)
+
+#name = "nav_masac_5run"
+env_name="simple_spread"
+data = torch.load("../logs/" + name + ".p", map_location="cpu")
 # # play_game(data, 20, 0, env_name=env_name, steps=5, name="nav_env")
 # #
-# # # play_game(data, 20, 0, env_name=env_name)
-# # count_rew_greater_0(data, [i for i in [0,5,10,20]], n_runs=5, env_name=env_name)
-# plot_model_statistics_r22(data, [i for i in range(0,21,1)], n_runs=5, env_name=env_name, pick=True, add_mean_line=True, ylim=(-190,-120))
+# play_game(data, 20, 0, env_name=env_name, save_all=True)
+#generate_video(data, 0, 0, env_name=env_name, name=name+"start")
+
+# count_rew_greater_0(data, [i for i in [20]], n_runs=5, env_name=env_name)
+plot_model_statistics_r22(data, [i for i in range(0,21,1)], n_runs=5, env_name=env_name, pick=True, add_mean_line=False, ylim=(-190,-120))
 # #print_model_bias(data, 20, n_runs=5, env_name=env_name)
 #
 # # plt.show()
@@ -1209,21 +1247,22 @@ plt.show()
 # # name_run = "SAC4"
 # # env_name="simple_spread"
 # # data = torch.load("../logs/" + name + ".p", map_location="cpu")
-# # # count_rew_greater_0(data, [i for i in  [0,5,10,20]], n_runs=2, env_name=env_name)
+# count_rew_greater_0(data, [i for i in  [0,5,10,20]], n_runs=2, env_name=env_name)
 # #
-# name = "tag_mambpo_10step"
-# # name = "tag_masac_5run"
-#
+name = "tag_mambpo_10step"
+#name = "tag_masac_5run"
+
 # # name_run = "SAC4"
-# env_name="simple_tag_coop"
-# data = torch.load("../logs/" + name + ".p", map_location="cpu")
+env_name = "simple_tag_coop"
+data = torch.load("../logs/" + name + ".p", map_location="cpu")
 # # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env")
 # # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env2")
 # # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env3")
 # # play_game(data, 20, 0, env_name=env_name, steps=5, name="tag_env4")
 # # play_game(data, 20, 0, env_name=env_name)
-# plot_model_statistics_r22(data, [i for i in range(0,21,1)], n_runs=5, env_name=env_name, pick=True, add_mean_line=True, ylim=(0,250))
+plot_model_statistics_r22(data, [i for i in range(0,21,1)], n_runs=5, env_name=env_name, pick=True, add_mean_line=False, ylim=(0,250))
 # # count_rew_greater_0(data, [i for i in  [0,5,10,20]], n_runs=5, env_name=env_name)
+#generate_video(data, 0, 0, env_name=env_name, name=name+"start")
 
 # print_model_bias(data, 20, n_runs=5, env_name=env_name)
 
