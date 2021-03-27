@@ -10,14 +10,14 @@ from decentralizedlearning.algs.utils import loss_critic
 from decentralizedlearning.algs.utils import update_target_networks
 from decentralizedlearning.algs.utils import convert_multi_inputs_to_tensors
 from decentralizedlearning.algs.models import EnsembleModel
-from decentralizedlearning.algs.models import DegradedSim
+# from decentralizedlearning.algs.models import DegradedSim
 from decentralizedlearning.algs.utils import convert_inputs_to_tensors
 import logging
 
 class SACHyperPar:
     def __init__(self, **kwargs):
         self.hidden_dims_actor = tuple(kwargs.get("hidden_dims_actor",
-                                             (256,256)))
+                                             (128,128)))
         self.hidden_dims_critic = tuple(kwargs.get("hidden_dims_critic",
                                               (256,256)))
         self.hidden_dims_model = tuple(kwargs.get("hidden_dims_model",

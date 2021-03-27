@@ -1,7 +1,3 @@
-from decentralizedlearning.algs.hddpg import HDDPGAgent
-from decentralizedlearning.algs.td3 import TD3
-from decentralizedlearning.algs.modelbased import ModelAgent
-from decentralizedlearning.algs.sac import SAC
 from decentralizedlearning.algs.configs.config import get_hyperpar
 from decentralizedlearning.data_log import DataLog
 import itertools
@@ -10,6 +6,7 @@ import time
 import os
 import logging
 from gym import spaces
+import pyglet
 
 def scale_action(env, agent_id, action):
     if not isinstance(env.action_space[agent_id], spaces.Discrete):
@@ -18,7 +15,7 @@ def scale_action(env, agent_id, action):
         return action
 
 
-def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None, benchmark=False):
+def run_episode(env, agents, eval=False, render=False, generate_val_data=False, greedy_eval=True, steps=25, store_data=False, trainer=None, benchmark=False, save_all=False, name=None):
     obs_n = env.reset()
     reward_tot = [0.0 for i in range(len(agents))]
     reward_n = [0.0 for i in range(len(agents))]
@@ -33,7 +30,6 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
         actions = []
     # Start env
     for i in range(steps):
-
         # query for action from each agent's policy
         act_n = []
         if store_data or True:
@@ -79,6 +75,10 @@ def run_episode(env, agents, eval=False, render=False, generate_val_data=False, 
         # render all agent views
         if render:
             env.render()
+        if save_all and i<10:
+            pyglet.image.get_buffer_manager().get_color_buffer().save("../figures/videos/" + name + "0" + str(i) + ".png")
+        elif save_all:
+            pyglet.image.get_buffer_manager().get_color_buffer().save("../figures/videos/" + name + str(i) + ".png")
     for j, agent in enumerate(agents):
         agent.reset()
     if trainer is not None:
