@@ -4,7 +4,7 @@ atari-py==0.2.6
 baselines==0.1.5
 Box2D==2.3.10
 cachetools==4.1.1
-certifi==2020.4.5.1
+certifi==2022.12.7
 cffi==1.14.0
 chardet==3.0.4
 click==7.1.2
